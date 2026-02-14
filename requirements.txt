@@ -1,0 +1,6 @@
+z3-solver==4.13.4.0
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.10.0
+networkx==3.4.2
+numpy==2.1.0
