@@ -350,7 +350,15 @@ curl http://localhost:8000/api/health
 
 ---
 
-##  License
+## 🔒 Model Limitations
+
+- **Topology Accuracy** — Results are only as reliable as the infrastructure model fed into the system. An incorrect or incomplete causal graph will produce misleading inevitability scores.
+- **Known Techniques Only** — The solver operates over modeled attack paths. Zero-day exploits and novel TTPs outside the graph are not captured.
+- **Static Snapshot** — Analysis reflects a point-in-time topology. Dynamic environments (auto-scaling, ephemeral workloads) require re-modeling to stay accurate.
+
+---
+
+## 📄 License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
