@@ -166,7 +166,7 @@ Identifies the **smallest set of controls** whose failure makes a goal inevitabl
 Automatically identifies controls that are **structurally irrelevant** — controls that, even if removed, don't change any goal's inevitability score. These are your security theater: expensive, compliance-satisfying, but causally meaningless.
 
 ### 🔄 Counterfactual Engine
-**"What if we had enabled this control?"** — Recompute the entire causal model under hypothetical interventions. Proves whether a proposed change would have *structurally prevented* a breach.
+"What if we had enabled this control?" — Recompute the entire causal model under hypothetical interventions. Proves whether a proposed change would have *structurally prevented* a breach.
 
 ### 💰 Economic Impact Analysis
 Maps causal analysis to dollars:
@@ -179,6 +179,13 @@ Visualizes how infrastructure unravels when controls fail — frame-by-frame col
 
 ### 📝 Explainability Layer
 Generates human-readable proof narratives: *"Goal X is inevitable because controls A, B, and C are all inactive. Even with B enabled, the path through D remains unblocked."*
+
+### 🛠️ Custom Infrastructure Analysis
+Define your own infrastructure graph using a JSON editor or visual builder. Analyze custom topologies with the full causal engine, including:
+- **Graph construction** with nodes and edges
+- **Goal definition**
+- **Starter templates** (Simple Network, Cloud IAM, Supply Chain, AD Escalation)
+- **Topological visualization** of your custom attack graph
 
 ---
 
@@ -210,22 +217,6 @@ Generates formal **security posture certification reports** with:
 - Per-goal pass/fail verdicts with proof artifacts
 - Exportable findings with severity ratings
 
-### 📈 Failure Forecasting
-Projects how inevitability scores will **drift over time** based on common infrastructure degradation patterns:
-- Privilege creep (8%/month)
-- Identity sprawl (5%/month)
-- Patch decay (3%/month)
-- Configuration drift (4%/month)
-
-### 💥 Goal Collision Analysis
-Detects **interactions between multiple attack goals**:
-- **Synergies** — fixing one goal's controls helps another
-- **Conflicts** — fixing one goal worsens another
-- **Independence** — goals are causally isolated
-
-### 🔴 Adversarial Defense Testing
-Red team simulation that finds the **optimal attack strategy** given current defenses. Identifies which single control bypass would be most devastating — your single points of failure.
-
 ---
 
 ## 🛠️ Tech Stack
@@ -252,6 +243,7 @@ Red team simulation that finds the **optimal attack strategy** given current def
 GET    /api/health                          # Health check
 GET    /api/demo/scenarios                  # List all breach scenarios
 POST   /api/demo/run/{scenario_id}          # Run full analysis
+POST   /api/custom/run                      # Run custom infrastructure analysis
 POST   /api/demo/counterfactual             # Counterfactual what-if analysis
 ```
 
@@ -260,9 +252,6 @@ POST   /api/demo/counterfactual             # Counterfactual what-if analysis
 ```http
 GET    /api/advanced/optimize/{session_id}     # Multi-goal optimization
 GET    /api/advanced/certify/{session_id}      # Certification report
-GET    /api/advanced/forecast/{session_id}     # Failure forecasting
-GET    /api/advanced/collisions/{session_id}   # Goal collision analysis
-GET    /api/advanced/adversarial/{session_id}  # Red team simulation
 ```
 
 ### Example: Run a Breach Scenario
@@ -290,9 +279,10 @@ curl -X POST http://localhost:8000/api/demo/run/solarwinds \
   "explanations": [...],
   "optimization_strategies": [...],
   "certification": {...},
-  "forecast": {...},
-  "goal_collisions": [...],
-  "adversarial_report": {...}
+  "graph": {
+      "nodes": [...],
+      "edges": [...]
+  }
 }
 ```
 
@@ -340,11 +330,11 @@ curl http://localhost:8000/api/health
 |--------|-------|
 | **Backend Modules** | 13 |
 | **Breach Scenarios** | 6 |
-| **Advanced Features** | 5 |
+| **Advanced Features** | 2 |
 | **Lines of Python** | ~15,000+ |
 | **Lines of CSS** | ~2,000 |
 | **Lines of JavaScript** | ~1,200 |
-| **API Endpoints** | 10+ |
+| **API Endpoints** | 8+ |
 
 </div>
 

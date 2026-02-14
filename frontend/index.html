@@ -26,6 +26,7 @@
         <div class="nav-links">
             <a href="#" class="nav-link active" data-view="hero">Home</a>
             <a href="#" class="nav-link" data-view="dashboard">Analysis</a>
+            <a href="#" class="nav-link" data-view="custom">Custom Analysis</a>
             <a href="#" class="nav-link" data-view="collapse">Collapse Sim</a>
             <a href="#" class="nav-link" data-view="breach">Case Studies</a>
         </div>
@@ -173,17 +174,7 @@
             </div>
             <div class="explanation-panel" id="explanation-panel"></div>
 
-            <!-- Fragility -->
-            <div class="section-title">
-                <span class="section-icon">🏗️</span> Architectural Fragility Index
-            </div>
-            <div class="fragility-panel" id="fragility-panel"></div>
 
-            <!-- Optimization Strategies -->
-            <div class="section-title">
-                <span class="section-icon">🎯</span> Multi-Goal Optimization Strategies
-            </div>
-            <div class="optimization-panel" id="optimization-panel"></div>
 
             <!-- Certification -->
             <div class="section-title">
@@ -191,23 +182,6 @@
             </div>
             <div id="certification-panel"></div>
 
-            <!-- Failure Forecast -->
-            <div class="section-title">
-                <span class="section-icon">📈</span> Failure Forecasting
-            </div>
-            <div id="forecast-panel"></div>
-
-            <!-- Goal Collisions -->
-            <div class="section-title">
-                <span class="section-icon">💥</span> Goal Collision Analysis
-            </div>
-            <div class="collision-panel" id="collision-panel"></div>
-
-            <!-- Adversarial Testing -->
-            <div class="section-title">
-                <span class="section-icon">🔴</span> Adversarial Defense Testing
-            </div>
-            <div id="adversarial-panel"></div>
         </div>
     </section>
 
@@ -289,6 +263,172 @@
             <div id="breach-detail" style="display:none;">
                 <div class="breach-timeline-panel" id="breach-timeline-panel"></div>
                 <div class="breach-headline" id="breach-headline"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ Custom Analysis Section ═══ -->
+    <section id="view-custom" class="view">
+        <div class="custom-analysis">
+            <div class="dash-header">
+                <div>
+                    <h2 class="dash-title">Custom Infrastructure Analysis</h2>
+                    <p class="dash-subtitle">Define your own infrastructure graph and run the full causal analysis
+                        engine</p>
+                </div>
+                <div class="dash-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="showView('hero')">← Back</button>
+                </div>
+            </div>
+
+            <!-- Scenario Name -->
+            <div class="custom-name-row">
+                <label class="custom-label">Scenario Name</label>
+                <input type="text" id="custom-scenario-name" class="custom-input"
+                    placeholder="My Infrastructure Analysis" value="Custom Analysis">
+            </div>
+
+            <!-- Mode Tabs -->
+            <div class="custom-tabs">
+                <button class="custom-tab active" onclick="switchCustomTab('json')" id="tab-json">JSON Editor</button>
+                <button class="custom-tab" onclick="switchCustomTab('visual')" id="tab-visual">Visual Builder</button>
+            </div>
+
+            <!-- JSON Editor Mode -->
+            <div id="custom-mode-json" class="custom-mode active">
+                <div class="custom-section-header">
+                    <span>Paste or edit JSON (nodes, edges, goals)</span>
+                    <div>
+                        <label class="btn btn-sm btn-secondary" style="cursor:pointer;">
+                            📁 Upload JSON
+                            <input type="file" id="json-file-upload" accept=".json" style="display:none;"
+                                onchange="handleJsonUpload(event)">
+                        </label>
+                    </div>
+                </div>
+                <textarea id="custom-json-editor" class="custom-json-editor" spellcheck="false" placeholder='{
+  "nodes": [
+    { "id": "attacker", "type": "identity", "name": "External Attacker" },
+    { "id": "web_server", "type": "asset", "name": "Web Server" },
+    { "id": "firewall", "type": "control", "name": "Firewall", "control_state": "active", "annual_cost": 50000 },
+    { "id": "database", "type": "asset", "name": "Production Database", "criticality": "critical" }
+  ],
+  "edges": [
+    { "source": "attacker", "target": "web_server", "edge_type": "access", "label": "HTTP Access" },
+    { "source": "firewall", "target": "web_server", "edge_type": "control", "label": "Blocks external" },
+    { "source": "web_server", "target": "database", "edge_type": "lateral", "label": "DB Connection" }
+  ],
+  "goals": [
+    { "name": "Data Exfiltration", "target_assets": ["database"], "required_conditions": ["database"] }
+  ]
+}'></textarea>
+            </div>
+
+            <!-- Visual Builder Mode -->
+            <div id="custom-mode-visual" class="custom-mode">
+                <!-- Nodes -->
+                <div class="custom-builder-section">
+                    <div class="custom-section-header">
+                        <span>◆ Nodes</span>
+                        <button class="btn btn-sm btn-secondary" onclick="addNodeRow()">+ Add Node</button>
+                    </div>
+                    <div id="node-builder-rows">
+                        <div class="builder-row" data-row-type="node">
+                            <input type="text" placeholder="Node ID" class="builder-input node-id">
+                            <select class="builder-select node-type">
+                                <option value="asset">Asset</option>
+                                <option value="identity">Identity</option>
+                                <option value="control">Control</option>
+                                <option value="privilege">Privilege</option>
+                                <option value="channel">Channel</option>
+                                <option value="trust_boundary">Trust Boundary</option>
+                            </select>
+                            <input type="text" placeholder="Display Name" class="builder-input node-name">
+                            <input type="number" placeholder="Cost ($/yr)" class="builder-input node-cost"
+                                style="width:110px;">
+                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Edges -->
+                <div class="custom-builder-section">
+                    <div class="custom-section-header">
+                        <span>◆ Edges</span>
+                        <button class="btn btn-sm btn-secondary" onclick="addEdgeRow()">+ Add Edge</button>
+                    </div>
+                    <div id="edge-builder-rows">
+                        <div class="builder-row" data-row-type="edge">
+                            <input type="text" placeholder="Source Node ID" class="builder-input edge-source">
+                            <span style="color:var(--accent-cyan); font-weight:700;">→</span>
+                            <input type="text" placeholder="Target Node ID" class="builder-input edge-target">
+                            <select class="builder-select edge-type">
+                                <option value="access">Access</option>
+                                <option value="control">Control</option>
+                                <option value="lateral">Lateral</option>
+                                <option value="privilege">Privilege</option>
+                                <option value="escalation">Escalation</option>
+                                <option value="trust">Trust</option>
+                                <option value="dependency">Dependency</option>
+                            </select>
+                            <input type="text" placeholder="Label" class="builder-input edge-label">
+                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Goals -->
+                <div class="custom-builder-section">
+                    <div class="custom-section-header">
+                        <span>◆ Goals</span>
+                        <button class="btn btn-sm btn-secondary" onclick="addGoalRow()">+ Add Goal</button>
+                    </div>
+                    <div id="goal-builder-rows">
+                        <div class="builder-row" data-row-type="goal">
+                            <input type="text" placeholder="Goal Name" class="builder-input goal-name">
+                            <input type="text" placeholder="Target Asset IDs (comma-separated)"
+                                class="builder-input goal-targets" style="flex:2;">
+                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Templates -->
+            <div class="custom-templates">
+                <div class="custom-section-header">
+                    <span>◆ Starter Templates</span>
+                </div>
+                <div class="template-grid">
+                    <div class="template-card" onclick="loadTemplate('simple_network')">
+                        <div class="template-icon">🌐</div>
+                        <div class="template-name">Simple Network</div>
+                        <div class="template-desc">3 nodes, firewall + server + database</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('cloud_iam')">
+                        <div class="template-icon">☁️</div>
+                        <div class="template-name">Cloud IAM</div>
+                        <div class="template-desc">IAM role → EC2 → S3 with MFA control</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('ad_escalation')">
+                        <div class="template-icon">🏢</div>
+                        <div class="template-name">AD Escalation</div>
+                        <div class="template-desc">User → Admin → Domain Controller</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('supply_chain')">
+                        <div class="template-icon">🔗</div>
+                        <div class="template-name">Supply Chain</div>
+                        <div class="template-desc">Vendor → Build → Deploy → Production</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Run Button -->
+            <div class="custom-run-section">
+                <div id="custom-error" class="custom-error" style="display:none;"></div>
+                <button class="btn btn-primary btn-glow btn-lg" onclick="runCustomAnalysis()" id="custom-run-btn">
+                    <span class="btn-icon">▶</span> Run Causal Analysis
+                </button>
             </div>
         </div>
     </section>

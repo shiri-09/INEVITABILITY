@@ -129,24 +129,10 @@ class MCSExtractor:
                 mcs_sets.append(mcs_set)
                 break
 
-        # If still SAT, all controls together form the MCS
-        if not mcs_sets and candidate_controls:
-            elements = [
-                MCSElement(
-                    control_id=c.id,
-                    control_name=c.name,
-                    control_type=c.control_type,
-                    remediation_action=f"Enforce {c.name}",
-                    estimated_cost=c.annual_cost or 0.0,
-                )
-                for c in candidate_controls
-            ]
-            mcs_sets.append(MCSSet(
-                elements=elements,
-                cardinality=len(elements),
-                total_cost=sum(e.estimated_cost for e in elements),
-                validated=False,
-            ))
+        # If still SAT after trying all controls, then no MCS exists with the current control set.
+        # We do NOT return the candidate set because it fails to achieve the objective (blocking the goal).
+        if not mcs_sets:
+            pass  # Return empty list, signifying "Defense Impossible"
 
         return mcs_sets
 

@@ -13,7 +13,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 
-from .models import AnalysisResult, GoalPredicate, BreachCaseStudy
+from .models import (
+    AnalysisResult, GoalPredicate, BreachCaseStudy,
+    CausalGraph, InfraNode, InfraEdge, GoalTemplate, NodeType,
+)
 from .scm_builder import SCMBuilder
 from .solver_engine import CausalSolver
 from .mcs_extractor import MCSExtractor
@@ -57,6 +60,16 @@ class RunScenarioRequest(BaseModel):
     max_mcs_cardinality: int = 5
 
 
+class CustomAnalysisRequest(BaseModel):
+    """Request model for user-submitted infrastructure graphs."""
+    scenario_name: str = "Custom Analysis"
+    nodes: list[dict]
+    edges: list[dict]
+    goals: list[dict]
+    algorithm: str = "greedy"
+    max_mcs_cardinality: int = 5
+
+
 class CounterfactualRequest(BaseModel):
     session_id: str
     interventions: dict[str, bool]
@@ -85,17 +98,19 @@ async def list_scenarios():
     return get_all_scenarios()
 
 
-# ─── Run Analysis ─────────────────────────────────────────────────────────────
+# ─── Shared Analysis Pipeline ────────────────────────────────────────────────
 
-@app.post("/api/demo/run/{scenario_id}")
-async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = None):
-    """Run a complete analysis on a pre-built breach scenario."""
+def _run_analysis_pipeline(
+    graph: CausalGraph,
+    goals: list[GoalPredicate],
+    scenario_name: str,
+    organization: str = "Custom",
+    algorithm: str = "greedy",
+    max_mcs_cardinality: int = 5,
+    case_study: BreachCaseStudy | None = None,
+) -> dict:
+    """Run the full analysis pipeline on a graph + goals. Shared by demo and custom endpoints."""
     start = time.perf_counter()
-
-    try:
-        graph, goals, case_study = load_scenario(scenario_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
 
     # Build SCM
     builder = SCMBuilder(graph)
@@ -116,9 +131,6 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
     collision_analyzer = GoalCollisionAnalyzer(solver, scm)
     adversarial = AdversarialTester(solver, scm)
 
-    algo = request.algorithm if request else "greedy"
-    max_card = request.max_mcs_cardinality if request else 5
-
     # Run analyses
     inevitability_results = []
     mcs_results = []
@@ -127,15 +139,12 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
     proof_artifacts = []
 
     for goal in goals:
-        # 1. Inevitability
         inev = solver.compute_inevitability(goal)
         inevitability_results.append(inev)
 
-        # 2. MCS
-        mcs = mcs_extractor.extract_mcs(goal, max_cardinality=max_card, algorithm=algo)
+        mcs = mcs_extractor.extract_mcs(goal, max_cardinality=max_mcs_cardinality, algorithm=algorithm)
         mcs_results.append(mcs)
 
-        # 3. Theater detection (with MCS info)
         mcs_ids = set()
         for mcs_set in mcs.mcs_sets:
             for elem in mcs_set.elements:
@@ -143,30 +152,19 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
         theater_report = theater.classify_controls(goal, mcs_ids)
         theater_reports.append(theater_report)
 
-        # 4. Explanation
         explanation = explainer.generate_explanation(goal, inev, mcs, theater_report)
         explanations.append(explanation)
 
-        # 5. Proofs
         for mcs_set in mcs.mcs_sets:
             proof = mcs_extractor.generate_mcs_proof(goal, mcs_set)
             proof_artifacts.append(proof)
 
-    # 6. Economic analysis
     econ_report = economic.analyze(theater_reports)
-
-    # 7. Fragility profile
     fragility = collapse_engine.compute_fragility(goals)
-
-    # 8. Collapse simulation
     collapse_frames = collapse_engine.simulate_collapse(goals)
-
-    # 9. Collapse ranking
     collapse_ranking = collapse_engine.compute_all_collapse_metrics(goals)
-
-    # 10. Advanced features
     optimization_strategies = optimizer.compute_optimal_strategies(goals)
-    certification = certifier.generate_certification(goals, inevitability_results, case_study.organization)
+    certification = certifier.generate_certification(goals, inevitability_results, organization)
     forecast = forecaster.forecast(goals, inevitability_results)
     goal_collisions = collision_analyzer.analyze_collisions(goals)
     adversarial_report = adversarial.run_adversarial_test(goals)
@@ -174,7 +172,7 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
     elapsed = (time.perf_counter() - start) * 1000
 
     result = AnalysisResult(
-        scenario_name=case_study.name,
+        scenario_name=scenario_name,
         inevitability_results=inevitability_results,
         mcs_results=mcs_results,
         theater_reports=theater_reports,
@@ -198,7 +196,7 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
         "result": result,
     }
 
-    return {
+    response = {
         "analysis_id": result.analysis_id,
         "scenario_name": result.scenario_name,
         "computation_time_ms": result.computation_time_ms,
@@ -211,13 +209,111 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
         "explanations": [e.model_dump() for e in result.explanations],
         "proof_artifacts": [p.model_dump() for p in result.proof_artifacts],
         "collapse_ranking": [c.model_dump() for c in result.collapse_ranking],
-        "case_study": case_study.model_dump(),
         "optimization_strategies": optimization_strategies,
         "certification": certification,
         "forecast": forecast,
         "goal_collisions": goal_collisions,
         "adversarial_report": adversarial_report,
+        "graph": {
+            "nodes": [n.model_dump() for n in graph.nodes],
+            "edges": [e.model_dump() for e in graph.edges],
+        },
     }
+
+    if case_study:
+        response["case_study"] = case_study.model_dump()
+
+    return response
+
+
+# ─── Run Demo Analysis ────────────────────────────────────────────────────────
+
+@app.post("/api/demo/run/{scenario_id}")
+async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = None):
+    """Run a complete analysis on a pre-built breach scenario."""
+    try:
+        graph, goals, case_study = load_scenario(scenario_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    algo = request.algorithm if request else "greedy"
+    max_card = request.max_mcs_cardinality if request else 5
+
+    return _run_analysis_pipeline(
+        graph=graph,
+        goals=goals,
+        scenario_name=case_study.name,
+        organization=case_study.organization,
+        algorithm=algo,
+        max_mcs_cardinality=max_card,
+        case_study=case_study,
+    )
+
+
+# ─── Run Custom Analysis ─────────────────────────────────────────────────────
+
+def _validate_custom_graph(nodes: list[dict], edges: list[dict], goals: list[dict]):
+    """Validate user-submitted graph data."""
+    if not nodes:
+        raise HTTPException(status_code=400, detail="At least one node is required.")
+    if not goals:
+        raise HTTPException(status_code=400, detail="At least one goal is required.")
+
+    node_ids = {n.get("id", n.get("name", "")) for n in nodes}
+
+    # Validate edge references
+    for i, edge in enumerate(edges):
+        src = edge.get("source", "")
+        tgt = edge.get("target", "")
+        if src not in node_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Edge {i}: source '{src}' does not match any node ID.",
+            )
+        if tgt not in node_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Edge {i}: target '{tgt}' does not match any node ID.",
+            )
+
+    # Warn (but don't block) if no controls exist
+    has_control = any(n.get("type") == "control" for n in nodes)
+    if not has_control:
+        # Still allow — the solver will just find everything inevitable
+        pass
+
+
+@app.post("/api/custom/run")
+async def run_custom_analysis(request: CustomAnalysisRequest):
+    """Run a complete analysis on a user-submitted infrastructure graph."""
+    _validate_custom_graph(request.nodes, request.edges, request.goals)
+
+    # Build typed model objects from raw dicts
+    infra_nodes = []
+    for n in request.nodes:
+        # Use 'id' field if provided, otherwise auto-generate from 'name'
+        if "id" not in n and "name" in n:
+            n["id"] = n["name"].lower().replace(" ", "_")
+        infra_nodes.append(InfraNode(**n))
+
+    infra_edges = []
+    for e in request.edges:
+        infra_edges.append(InfraEdge(**e))
+
+    graph = CausalGraph(nodes=infra_nodes, edges=infra_edges)
+
+    goals = []
+    for g in request.goals:
+        goals.append(GoalPredicate(**g))
+
+    return _run_analysis_pipeline(
+        graph=graph,
+        goals=goals,
+        scenario_name=request.scenario_name,
+        organization="Custom",
+        algorithm=request.algorithm,
+        max_mcs_cardinality=request.max_mcs_cardinality,
+    )
 
 
 # ─── Counterfactual ──────────────────────────────────────────────────────────

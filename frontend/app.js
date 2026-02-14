@@ -97,13 +97,8 @@ function renderDashboard(data) {
     renderTheaterGrid(data.theater_reports);
     renderEconomicPanel(data.economic_report);
     renderExplanations(data.explanations);
-    renderFragility(data.fragility_profile);
     renderCollapseView(data.collapse_frames);
-    renderOptimization(data.optimization_strategies);
     renderCertification(data.certification);
-    renderForecast(data.forecast);
-    renderCollisions(data.goal_collisions);
-    renderAdversarial(data.adversarial_report);
     showToast('Analysis complete — all modules loaded', 'success');
 }
 
@@ -140,7 +135,7 @@ function renderGraph(data) {
     const W = canvas.width;
     const H = canvas.height;
 
-    // Get nodes and edges from SCM or raw data
+    // Get nodes and edges from case study, graph data, or fallback
     let nodes = [];
     let edges = [];
 
@@ -160,12 +155,104 @@ function renderGraph(data) {
         for (let i = 0; i < nodes.length - 1; i++) {
             edges.push({ from: i, to: i + 1 });
         }
+    } else if (data.graph && data.graph.nodes && data.graph.nodes.length > 0) {
+        // Build graph from API response nodes/edges
+        const gNodes = data.graph.nodes;
+        const gEdges = data.graph.edges || [];
+
+        // Color by node type
+        const typeColors = {
+            identity: '#00ff88',
+            asset: '#00f0ff',
+            control: '#ffcc00',
+            channel: '#aa55ff',
+            privilege: '#ff8844',
+        };
+
+        // Compute topological layers for left-to-right layout
+        const idToIdx = {};
+        gNodes.forEach((n, i) => { idToIdx[n.id] = i; });
+
+        // Build adjacency for non-control edges
+        const children = gNodes.map(() => []);
+        const parentCount = new Array(gNodes.length).fill(0);
+        gEdges.forEach(e => {
+            if (e.edge_type === 'control') return; // skip control edges for layout
+            const si = idToIdx[e.source], ti = idToIdx[e.target];
+            if (si !== undefined && ti !== undefined) {
+                children[si].push(ti);
+                parentCount[ti]++;
+            }
+        });
+
+        // BFS layering
+        const layer = new Array(gNodes.length).fill(0);
+        const queue = [];
+        for (let i = 0; i < gNodes.length; i++) {
+            if (parentCount[i] === 0) queue.push(i);
+        }
+        while (queue.length > 0) {
+            const cur = queue.shift();
+            children[cur].forEach(c => {
+                layer[c] = Math.max(layer[c], layer[cur] + 1);
+                parentCount[c]--;
+                if (parentCount[c] === 0) queue.push(c);
+            });
+        }
+
+        // Group nodes by layer
+        const maxLayer = Math.max(...layer, 0);
+        const layerGroups = {};
+        gNodes.forEach((n, i) => {
+            const l = layer[i];
+            if (!layerGroups[l]) layerGroups[l] = [];
+            layerGroups[l].push(i);
+        });
+
+        // Position nodes in a layered layout
+        const marginX = 120, marginY = 80;
+        gNodes.forEach((n, i) => {
+            const l = layer[i];
+            const group = layerGroups[l];
+            const posInGroup = group.indexOf(i);
+            const groupSize = group.length;
+
+            const x = marginX + (l / Math.max(maxLayer, 1)) * (W - 2 * marginX);
+            const totalHeight = (groupSize - 1) * 100;
+            const y = H / 2 - totalHeight / 2 + posInGroup * 100;
+
+            const isCritical = n.criticality === 'critical';
+            let color = typeColors[n.type] || '#00f0ff';
+            if (n.type === 'asset' && isCritical) color = '#ff3355';
+
+            nodes.push({
+                id: n.id,
+                x, y,
+                label: n.name || n.id,
+                color,
+                radius: isCritical ? 26 : n.type === 'identity' ? 24 : 20,
+                nodeType: n.type,
+            });
+        });
+
+        // Build edges using node indices
+        gEdges.forEach(e => {
+            const fromIdx = idToIdx[e.source];
+            const toIdx = idToIdx[e.target];
+            if (fromIdx !== undefined && toIdx !== undefined) {
+                edges.push({
+                    from: fromIdx,
+                    to: toIdx,
+                    label: e.label || '',
+                    isControl: e.edge_type === 'control',
+                });
+            }
+        });
     } else {
-        // Fallback: generate layout from graph data
-        const graphNodes = data.inevitability_results?.length > 0 ? [] : [{
+        // No graph data at all
+        nodes = [{
             id: 'empty', x: W / 2, y: H / 2, label: 'No graph data', color: '#555', radius: 30,
         }];
-        nodes = graphNodes;
     }
 
     // Clear
@@ -188,33 +275,51 @@ function renderGraph(data) {
         const to = nodes[e.to];
         if (!from || !to) return;
 
+        const isControl = e.isControl;
+        const edgeColor = isControl ? 'rgba(255, 204, 0, 0.6)' : 'rgba(0, 240, 255, 0.6)';
+        const glowColor = isControl ? 'rgba(255, 204, 0, 0.12)' : 'rgba(0, 240, 255, 0.15)';
+
         // Glow
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.15)';
+        ctx.strokeStyle = glowColor;
         ctx.lineWidth = 6;
+        ctx.setLineDash([]);
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
         ctx.lineTo(to.x, to.y);
         ctx.stroke();
 
         // Main line
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+        ctx.strokeStyle = edgeColor;
         ctx.lineWidth = 2;
+        ctx.setLineDash(isControl ? [8, 6] : []);
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
         ctx.lineTo(to.x, to.y);
         ctx.stroke();
+        ctx.setLineDash([]);
 
         // Arrow
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         const arrowX = to.x - Math.cos(angle) * to.radius;
         const arrowY = to.y - Math.sin(angle) * to.radius;
-        ctx.fillStyle = 'rgba(0, 240, 255, 0.8)';
+        ctx.fillStyle = isControl ? 'rgba(255, 204, 0, 0.8)' : 'rgba(0, 240, 255, 0.8)';
         ctx.beginPath();
         ctx.moveTo(arrowX, arrowY);
         ctx.lineTo(arrowX - 10 * Math.cos(angle - 0.4), arrowY - 10 * Math.sin(angle - 0.4));
         ctx.lineTo(arrowX - 10 * Math.cos(angle + 0.4), arrowY - 10 * Math.sin(angle + 0.4));
         ctx.closePath();
         ctx.fill();
+
+        // Edge label
+        if (e.label) {
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2 - 8;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.font = '9px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(e.label, midX, midY);
+        }
     });
 
     // Draw nodes
@@ -451,36 +556,6 @@ function renderExplanations(explanations) {
     }).join('');
 }
 
-// ── Fragility ────────────────────────────────────────────────────────────────
-function renderFragility(profile) {
-    const panel = document.getElementById('fragility-panel');
-    if (!profile) {
-        panel.innerHTML = '<div style="color: var(--text-muted);">No fragility data.</div>';
-        return;
-    }
-
-    panel.innerHTML = `
-        <div class="fragility-grade ${profile.grade || 'C'}">${profile.grade || '?'}</div>
-        <div class="fragility-details">
-            <div class="fragility-stat">
-                <div class="fragility-stat-label">Architectural Fragility Index</div>
-                <div class="fragility-stat-value">${(profile.afi || 0).toFixed(3)}</div>
-            </div>
-            <div class="fragility-stat">
-                <div class="fragility-stat-label">Single Points of Failure</div>
-                <div class="fragility-stat-value" style="color: ${profile.spof_count > 0 ? 'var(--accent-red)' : 'var(--accent-green)'};">${profile.spof_count || 0}</div>
-            </div>
-            <div class="fragility-stat">
-                <div class="fragility-stat-label">High-Collapse Controls</div>
-                <div class="fragility-stat-value">${profile.high_collapse_controls || 0}</div>
-            </div>
-            <div class="fragility-stat">
-                <div class="fragility-stat-label">Structural Brittleness</div>
-                <div class="fragility-stat-value">${(profile.structural_brittleness || 0).toFixed(3)}</div>
-            </div>
-        </div>
-    `;
-}
 
 // ── Collapse Simulation ──────────────────────────────────────────────────────
 function renderCollapseView(frames) {
@@ -596,37 +671,6 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-// ── Optimization Strategies ──────────────────────────────────────────────────
-function renderOptimization(strategies) {
-    const panel = document.getElementById('optimization-panel');
-    if (!strategies || strategies.length === 0) {
-        panel.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">No optimization strategies computed.</div>';
-        return;
-    }
-
-    panel.innerHTML = strategies.map(s => `
-        <div class="opt-strategy ${s.recommended ? 'recommended' : ''}">
-            <div class="opt-rank">#${s.rank}</div>
-            <div class="opt-name">${s.controls.join(' + ')}</div>
-            <div class="opt-description">${s.description}</div>
-            <div class="opt-metrics">
-                <div>
-                    <div class="opt-metric-value cost">${formatDollars(s.total_cost)}/yr</div>
-                    <div class="opt-metric-label">ANNUAL COST</div>
-                </div>
-                <div>
-                    <div class="opt-metric-value reduction">${(s.total_reduction * 100).toFixed(0)}%</div>
-                    <div class="opt-metric-label">RISK REDUCTION</div>
-                </div>
-                <div>
-                    <div class="opt-metric-value roi">${s.roi_score.toFixed(1)}</div>
-                    <div class="opt-metric-label">ROI SCORE</div>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
 // ── Certification Report ─────────────────────────────────────────────────────
 function renderCertification(cert) {
     const panel = document.getElementById('certification-panel');
@@ -701,139 +745,312 @@ function exportCertification() {
     showToast('Certification exported', 'success');
 }
 
-// ── Failure Forecast ─────────────────────────────────────────────────────────
-function renderForecast(forecast) {
-    const panel = document.getElementById('forecast-panel');
-    if (!forecast || !forecast.goal_forecasts) {
-        panel.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">No forecast data.</div>';
-        return;
-    }
+// ══════════════════════════════════════════════════════════════════════════════
+// CUSTOM ANALYSIS — User Input Feature
+// ══════════════════════════════════════════════════════════════════════════════
 
-    panel.innerHTML = `
-        <div class="forecast-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <div style="font-weight: 700; font-size: 1rem;">Inevitability Drift Projection</div>
-                <div style="font-family: var(--font-mono); font-size: 0.75rem; padding: 3px 10px;
-                    border-radius: 4px; color: ${forecast.overall_risk === 'CRITICAL' ? 'var(--accent-red)' : forecast.overall_risk === 'HIGH' ? 'var(--accent-yellow)' : 'var(--accent-green)'};
-                    border: 1px solid; opacity: 0.8;">${forecast.overall_risk} RISK</div>
-            </div>
+// ── Tab Switching ────────────────────────────────────────────────────────────
+function switchCustomTab(mode) {
+    document.querySelectorAll('.custom-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.custom-mode').forEach(m => m.classList.remove('active'));
 
-            <div class="forecast-chart">
-                <div class="forecast-threshold" style="top: 30%;"></div>
-                ${forecast.goal_forecasts.map((gf, idx) => {
-        const color = idx === 0 ? '#ff3355' : idx === 1 ? '#00f0ff' : '#aa55ff';
-        const points = gf.projections.map((p, i) => {
-            const x = (i / (gf.projections.length - 1)) * 100;
-            const y = 100 - (p.projected_score * 100);
-            return `${x}%,${y}%`;
-        });
-        // Create SVG polyline
-        return '';
-    }).join('')}
-                <svg width="100%" height="100%" style="position: absolute; inset: 0;" preserveAspectRatio="none" viewBox="0 0 100 100">
-                    ${forecast.goal_forecasts.map((gf, idx) => {
-        const color = idx === 0 ? '#ff3355' : idx === 1 ? '#00f0ff' : '#aa55ff';
-        const points = gf.projections.map((p, i) => {
-            const x = (i / Math.max(gf.projections.length - 1, 1)) * 100;
-            const y = 100 - (p.projected_score * 100);
-            return `${x},${y}`;
-        }).join(' ');
-        return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="0.8" vector-effect="non-scaling-stroke"/>`;
-    }).join('')}
-                </svg>
-            </div>
+    document.getElementById(`tab-${mode}`).classList.add('active');
+    document.getElementById(`custom-mode-${mode}`).classList.add('active');
+}
 
-            ${forecast.goal_forecasts.map(gf => `
-                <div class="forecast-stat">
-                    <span>${gf.goal_name}</span>
-                    <span class="forecast-stat-value ${gf.risk_trajectory === 'ACCELERATING' ? 'danger' : gf.risk_trajectory === 'DRIFTING' ? 'warning' : 'safe'}">
-                        ${(gf.current_score * 100).toFixed(0)}% → ${(gf.projections[gf.projections.length - 1]?.projected_score * 100 || 0).toFixed(0)}% (${forecast.forecast_horizon_months}mo)
-                    </span>
-                </div>
-                ${gf.crossing_month !== null ? `
-                    <div class="forecast-stat">
-                        <span style="color: var(--accent-red);">⚠ Crosses inevitable threshold</span>
-                        <span class="forecast-stat-value danger">Month ${gf.crossing_month}</span>
-                    </div>
-                ` : ''}
-            `).join('')}
-
-            <div style="margin-top: 12px; font-size: 0.82rem; color: var(--text-secondary);">
-                ${forecast.recommendation}
-            </div>
-        </div>
+// ── Visual Builder Helpers ───────────────────────────────────────────────────
+function addNodeRow() {
+    const container = document.getElementById('node-builder-rows');
+    const row = document.createElement('div');
+    row.className = 'builder-row';
+    row.dataset.rowType = 'node';
+    row.innerHTML = `
+        <input type="text" placeholder="Node ID" class="builder-input node-id">
+        <select class="builder-select node-type">
+            <option value="asset">Asset</option>
+            <option value="identity">Identity</option>
+            <option value="control">Control</option>
+            <option value="privilege">Privilege</option>
+            <option value="channel">Channel</option>
+            <option value="trust_boundary">Trust Boundary</option>
+        </select>
+        <input type="text" placeholder="Display Name" class="builder-input node-name">
+        <input type="number" placeholder="Cost ($/yr)" class="builder-input node-cost" style="width:110px;">
+        <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
     `;
+    container.appendChild(row);
+    row.querySelector('.node-id').focus();
 }
 
-// ── Goal Collision Analysis ──────────────────────────────────────────────────
-function renderCollisions(collisions) {
-    const panel = document.getElementById('collision-panel');
-    if (!collisions || collisions.length === 0) {
-        panel.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">Single-goal scenario — no collision analysis applicable.</div>';
-        return;
-    }
-
-    panel.innerHTML = collisions.map(c => `
-        <div class="collision-card">
-            <div>
-                <div class="collision-type ${c.collision_type.toLowerCase()}">${c.collision_type}</div>
-            </div>
-            <div>
-                <div style="font-weight: 600; margin-bottom: 4px;">${c.goal_1.name} ↔ ${c.goal_2.name}</div>
-                <div style="font-size: 0.82rem; color: var(--text-secondary);">${c.description}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">
-                    Shared controls: ${c.shared_control_count} · Unique: ${c.unique_to_goal_1} / ${c.unique_to_goal_2}
-                </div>
-            </div>
-            <div style="text-align: right; font-family: var(--font-mono); font-size: 0.85rem;">
-                <div style="color: var(--accent-red);">${(c.goal_1.score * 100).toFixed(0)}%</div>
-                <div style="color: var(--accent-cyan);">${(c.goal_2.score * 100).toFixed(0)}%</div>
-            </div>
-        </div>
-    `).join('');
-}
-
-// ── Adversarial Testing ──────────────────────────────────────────────────────
-function renderAdversarial(report) {
-    const panel = document.getElementById('adversarial-panel');
-    if (!report || !report.attack_vectors) {
-        panel.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">No adversarial test data.</div>';
-        return;
-    }
-
-    panel.innerHTML = `
-        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-xl);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <div style="font-weight: 700; font-size: 1rem;">Red Team Simulation</div>
-                <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">
-                    ${report.total_controls_tested} controls tested · ${report.critical_vectors} critical vectors
-                </div>
-            </div>
-
-            ${report.recommendation ? `
-                <div style="padding: 10px 14px; border-radius: 8px; margin-bottom: 16px;
-                    background: ${report.critical_vectors > 0 ? 'var(--accent-red-dim)' : 'rgba(0,255,136,0.05)'};
-                    border: 1px solid ${report.critical_vectors > 0 ? 'rgba(255,51,85,0.2)' : 'rgba(0,255,136,0.15)'};
-                    font-size: 0.82rem; color: var(--text-secondary);">
-                    ${report.recommendation}
-                </div>
-            ` : ''}
-
-            ${report.attack_vectors.slice(0, 5).map((v, i) => `
-                <div style="padding: 10px 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px;">
-                    <div style="font-family: var(--font-mono); font-size: 1.2rem; font-weight: 700; opacity: 0.3; min-width: 30px;">${i + 1}</div>
-                    <div style="flex: 1;">
-                        <div style="font-weight: 600; font-size: 0.9rem;">${v.control_to_bypass}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-secondary);">Bypassing this control causes ${(v.max_impact * 100).toFixed(0)}% increase in inevitability</div>
-                    </div>
-                    <div style="font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 1px; padding: 3px 8px;
-                        border-radius: 4px; font-weight: 700;
-                        background: ${v.severity === 'CRITICAL' ? 'var(--accent-red-dim)' : v.severity === 'HIGH' ? 'rgba(255,200,0,0.05)' : 'rgba(255,255,255,0.03)'};
-                        color: ${v.severity === 'CRITICAL' ? 'var(--accent-red)' : v.severity === 'HIGH' ? 'var(--accent-yellow)' : 'var(--text-muted)'};
-                        border: 1px solid ${v.severity === 'CRITICAL' ? 'rgba(255,51,85,0.2)' : v.severity === 'HIGH' ? 'rgba(255,200,0,0.15)' : 'var(--border)'};
-                    ">${v.severity}</div>
-                </div>
-            `).join('')}
-        </div>
+function addEdgeRow() {
+    const container = document.getElementById('edge-builder-rows');
+    const row = document.createElement('div');
+    row.className = 'builder-row';
+    row.dataset.rowType = 'edge';
+    row.innerHTML = `
+        <input type="text" placeholder="Source Node ID" class="builder-input edge-source">
+        <span style="color:var(--accent-cyan); font-weight:700;">→</span>
+        <input type="text" placeholder="Target Node ID" class="builder-input edge-target">
+        <select class="builder-select edge-type">
+            <option value="access">Access</option>
+            <option value="control">Control</option>
+            <option value="lateral">Lateral</option>
+            <option value="privilege">Privilege</option>
+            <option value="escalation">Escalation</option>
+            <option value="trust">Trust</option>
+            <option value="dependency">Dependency</option>
+        </select>
+        <input type="text" placeholder="Label" class="builder-input edge-label">
+        <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
     `;
+    container.appendChild(row);
+    row.querySelector('.edge-source').focus();
 }
+
+function addGoalRow() {
+    const container = document.getElementById('goal-builder-rows');
+    const row = document.createElement('div');
+    row.className = 'builder-row';
+    row.dataset.rowType = 'goal';
+    row.innerHTML = `
+        <input type="text" placeholder="Goal Name" class="builder-input goal-name">
+        <input type="text" placeholder="Target Asset IDs (comma-separated)" class="builder-input goal-targets" style="flex:2;">
+        <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+    `;
+    container.appendChild(row);
+    row.querySelector('.goal-name').focus();
+}
+
+// ── Build JSON from Visual Forms ─────────────────────────────────────────────
+function buildJsonFromForms() {
+    const nodes = [];
+    document.querySelectorAll('#node-builder-rows .builder-row').forEach(row => {
+        const id = row.querySelector('.node-id')?.value?.trim();
+        const type = row.querySelector('.node-type')?.value;
+        const name = row.querySelector('.node-name')?.value?.trim();
+        const cost = parseFloat(row.querySelector('.node-cost')?.value) || 0;
+        if (!id) return;
+
+        const node = { id, type, name: name || id };
+        if (type === 'control') {
+            node.control_state = 'active';
+            if (cost > 0) node.annual_cost = cost;
+        }
+        nodes.push(node);
+    });
+
+    const edges = [];
+    document.querySelectorAll('#edge-builder-rows .builder-row').forEach(row => {
+        const source = row.querySelector('.edge-source')?.value?.trim();
+        const target = row.querySelector('.edge-target')?.value?.trim();
+        const edgeType = row.querySelector('.edge-type')?.value;
+        const label = row.querySelector('.edge-label')?.value?.trim();
+        if (!source || !target) return;
+        edges.push({ source, target, edge_type: edgeType, label: label || '' });
+    });
+
+    const goals = [];
+    document.querySelectorAll('#goal-builder-rows .builder-row').forEach(row => {
+        const name = row.querySelector('.goal-name')?.value?.trim();
+        const targetsStr = row.querySelector('.goal-targets')?.value?.trim();
+        if (!name) return;
+        const targetAssets = targetsStr ? targetsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+        goals.push({ name, target_assets: targetAssets, required_conditions: targetAssets });
+    });
+
+    return { nodes, edges, goals };
+}
+
+// ── JSON File Upload ─────────────────────────────────────────────────────────
+function handleJsonUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const parsed = JSON.parse(e.target.result);
+            document.getElementById('custom-json-editor').value = JSON.stringify(parsed, null, 2);
+            switchCustomTab('json');
+            showToast('JSON file loaded successfully', 'success');
+        } catch (err) {
+            showToast('Invalid JSON file: ' + err.message, 'danger');
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ── Starter Templates ────────────────────────────────────────────────────────
+const TEMPLATES = {
+    simple_network: {
+        nodes: [
+            { id: "attacker", type: "identity", name: "External Attacker" },
+            { id: "firewall", type: "control", name: "Firewall", control_state: "active", annual_cost: 50000 },
+            { id: "web_server", type: "asset", name: "Web Server" },
+            { id: "waf", type: "control", name: "Web App Firewall (WAF)", control_state: "inactive", annual_cost: 30000 },
+            { id: "sqli_vuln", type: "channel", name: "SQL Injection Vulnerability" },
+            { id: "database", type: "asset", name: "Production Database", criticality: "critical" }
+        ],
+        edges: [
+            { source: "attacker", target: "web_server", edge_type: "access", label: "HTTP Access" },
+            { source: "firewall", target: "web_server", edge_type: "control", label: "Blocks unauthorized traffic" },
+            { source: "web_server", target: "database", edge_type: "lateral", label: "Legitimate SQL Connection" },
+            { source: "attacker", target: "sqli_vuln", edge_type: "access", label: "Crafted HTTP payload" },
+            { source: "waf", target: "sqli_vuln", edge_type: "control", label: "Blocks SQLi patterns" },
+            { source: "sqli_vuln", target: "database", edge_type: "access", label: "Direct DB query via SQLi" }
+        ],
+        goals: [
+            { name: "Database Exfiltration", target_assets: ["database"], required_conditions: ["database"] }
+        ]
+    },
+    cloud_iam: {
+        nodes: [
+            { id: "attacker", type: "identity", name: "External Attacker" },
+            { id: "phished_user", type: "identity", name: "Phished Employee" },
+            { id: "mfa", type: "control", name: "Multi-Factor Authentication", control_state: "active", annual_cost: 25000 },
+            { id: "ec2_instance", type: "asset", name: "EC2 Instance" },
+            { id: "leaked_key", type: "channel", name: "Leaked API Key in GitHub" },
+            { id: "secret_scanning", type: "control", name: "Secret Scanning", control_state: "inactive", annual_cost: 15000 },
+            { id: "s3_bucket", type: "asset", name: "S3 Data Bucket", criticality: "critical" }
+        ],
+        edges: [
+            { source: "attacker", target: "phished_user", edge_type: "access", label: "Spear phishing email" },
+            { source: "mfa", target: "phished_user", edge_type: "control", label: "Requires second factor" },
+            { source: "phished_user", target: "ec2_instance", edge_type: "privilege", label: "AssumeRole" },
+            { source: "ec2_instance", target: "s3_bucket", edge_type: "lateral", label: "IMDS cred theft" },
+            { source: "attacker", target: "leaked_key", edge_type: "access", label: "Found in public repo" },
+            { source: "secret_scanning", target: "leaked_key", edge_type: "control", label: "Detects exposed keys" },
+            { source: "leaked_key", target: "s3_bucket", edge_type: "access", label: "Direct S3 access with key" }
+        ],
+        goals: [
+            { name: "S3 Data Exfiltration", target_assets: ["s3_bucket"], required_conditions: ["s3_bucket"] }
+        ]
+    },
+    ad_escalation: {
+        nodes: [
+            { id: "attacker", type: "identity", name: "Compromised User" },
+            { id: "workstation", type: "asset", name: "Corporate Workstation" },
+            { id: "edr", type: "control", name: "EDR Agent", control_state: "active", annual_cost: 80000 },
+            { id: "kerberoast", type: "channel", name: "Kerberoasting Attack" },
+            { id: "strong_pw", type: "control", name: "Strong Service Acct Pwds", control_state: "inactive", annual_cost: 5000 },
+            { id: "domain_admin", type: "privilege", name: "Domain Admin Credentials" },
+            { id: "domain_controller", type: "asset", name: "Domain Controller", criticality: "critical" }
+        ],
+        edges: [
+            { source: "attacker", target: "workstation", edge_type: "access", label: "Initial foothold" },
+            { source: "edr", target: "workstation", edge_type: "control", label: "Behavior monitoring" },
+            { source: "workstation", target: "domain_admin", edge_type: "escalation", label: "Credential dumping" },
+            { source: "attacker", target: "kerberoast", edge_type: "access", label: "Request service tickets" },
+            { source: "strong_pw", target: "kerberoast", edge_type: "control", label: "Prevents offline cracking" },
+            { source: "kerberoast", target: "domain_admin", edge_type: "escalation", label: "Offline hash cracking" },
+            { source: "domain_admin", target: "domain_controller", edge_type: "access", label: "Full domain control" }
+        ],
+        goals: [
+            { name: "Domain Takeover", target_assets: ["domain_controller"], required_conditions: ["domain_controller"] }
+        ]
+    },
+    supply_chain: {
+        nodes: [
+            { id: "attacker", type: "identity", name: "Nation-State Actor" },
+            { id: "vendor", type: "asset", name: "Third-Party Vendor" },
+            { id: "vendor_review", type: "control", name: "Vendor Security Review", control_state: "active", annual_cost: 35000 },
+            { id: "oss_dep", type: "channel", name: "Compromised OSS Package" },
+            { id: "sca_tool", type: "control", name: "SCA Tool", control_state: "inactive", annual_cost: 20000 },
+            { id: "build_system", type: "asset", name: "CI/CD Pipeline" },
+            { id: "prod_server", type: "asset", name: "Production Server", criticality: "critical" }
+        ],
+        edges: [
+            { source: "attacker", target: "vendor", edge_type: "access", label: "Compromise vendor" },
+            { source: "vendor_review", target: "vendor", edge_type: "control", label: "Reviews security posture" },
+            { source: "vendor", target: "build_system", edge_type: "lateral", label: "Inject into build" },
+            { source: "attacker", target: "oss_dep", edge_type: "access", label: "Typosquat npm package" },
+            { source: "sca_tool", target: "oss_dep", edge_type: "control", label: "Flags malicious pkg" },
+            { source: "oss_dep", target: "build_system", edge_type: "lateral", label: "Auto-pulled by CI" },
+            { source: "build_system", target: "prod_server", edge_type: "lateral", label: "Auto-deploy to prod" }
+        ],
+        goals: [
+            { name: "Production Compromise", target_assets: ["prod_server"], required_conditions: ["prod_server"] }
+        ]
+    },
+};
+
+function loadTemplate(templateName) {
+    const template = TEMPLATES[templateName];
+    if (!template) return;
+
+    const json = JSON.stringify(template, null, 2);
+    document.getElementById('custom-json-editor').value = json;
+    switchCustomTab('json');
+    showToast(`Template "${templateName.replace(/_/g, ' ')}" loaded`, 'success');
+}
+
+// ── Run Custom Analysis ──────────────────────────────────────────────────────
+async function runCustomAnalysis() {
+    const errorDiv = document.getElementById('custom-error');
+    errorDiv.style.display = 'none';
+
+    let payload;
+    const activeTab = document.querySelector('.custom-tab.active')?.id;
+
+    if (activeTab === 'tab-visual') {
+        // Build from visual forms
+        const formData = buildJsonFromForms();
+        if (formData.nodes.length === 0) {
+            errorDiv.textContent = '⚠ Add at least one node using the visual builder.';
+            errorDiv.style.display = 'block';
+            return;
+        }
+        if (formData.goals.length === 0) {
+            errorDiv.textContent = '⚠ Add at least one goal.';
+            errorDiv.style.display = 'block';
+            return;
+        }
+        payload = formData;
+    } else {
+        // Parse from JSON editor
+        const jsonText = document.getElementById('custom-json-editor').value.trim();
+        if (!jsonText) {
+            errorDiv.textContent = '⚠ Paste or type JSON in the editor, or use a template.';
+            errorDiv.style.display = 'block';
+            return;
+        }
+        try {
+            payload = JSON.parse(jsonText);
+        } catch (err) {
+            errorDiv.textContent = `⚠ Invalid JSON: ${err.message}`;
+            errorDiv.style.display = 'block';
+            return;
+        }
+        if (!payload.nodes || !payload.goals) {
+            errorDiv.textContent = '⚠ JSON must have "nodes" and "goals" arrays.';
+            errorDiv.style.display = 'block';
+            return;
+        }
+    }
+
+    // Add scenario name
+    payload.scenario_name = document.getElementById('custom-scenario-name').value || 'Custom Analysis';
+
+    // Switch to dashboard and show loading
+    showView('dashboard');
+    const loading = document.getElementById('dashboard-loading');
+    loading.style.display = 'flex';
+
+    try {
+        const data = await apiCall('/custom/run', 'POST', payload);
+
+        state.analysisId = data.analysis_id;
+        state.analysisData = data;
+
+        renderDashboard(data);
+        showToast('Custom analysis complete — all modules loaded', 'success');
+    } catch (err) {
+        console.error('Custom analysis failed:', err);
+        showView('custom');
+        errorDiv.textContent = `⚠ Analysis failed: ${err.message}`;
+        errorDiv.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+    }
+}
+
