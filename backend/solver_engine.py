@@ -19,7 +19,7 @@ from .models import (
 class CausalSolver:
     """SMT-based solver for structural causal models."""
 
-    def __init__(self, scm: SCM, timeout_ms: int = 30000):
+    def __init__(self, scm: SCM, timeout_ms: int = 60000):
         self.scm = scm
         self.timeout_ms = timeout_ms
         self._z3_vars: dict[str, BoolRef] = {}
