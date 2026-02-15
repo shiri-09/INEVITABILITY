@@ -213,19 +213,6 @@ Generates formal **security posture certification reports** with:
 - Per-goal pass/fail verdicts with proof artifacts
 - Exportable findings with severity ratings
 
-### 📈 Failure Forecasting
-Projects how inevitability scores will **drift over time** based on common infrastructure degradation patterns:
-- Privilege creep (8%/month)
-- Identity sprawl (5%/month)
-- Patch decay (3%/month)
-- Configuration drift (4%/month)
-
-### 💥 Goal Collision Analysis
-Detects **interactions between multiple attack goals**:
-- **Synergies** — fixing one goal's controls helps another
-- **Conflicts** — fixing one goal worsens another
-- **Independence** — goals are causally isolated
-
 ### 🔴 Adversarial Defense Testing
 Red team simulation that finds the **optimal attack strategy** given current defenses. Identifies which single control bypass would be most devastating — your single points of failure.
 
@@ -377,4 +364,5 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 *"Security isn't about what's possible — it's about what's inevitable."*
 
 </div>
+
 
