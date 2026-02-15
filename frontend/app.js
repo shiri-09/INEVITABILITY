@@ -599,10 +599,10 @@ function renderTheaterGrid(reports) {
         report.classifications?.forEach(c => allClassifications.push(c));
     });
 
-    // Sort: irrelevant first (theater!), then by cost
+    // Sort: critical first, then necessary, partial, irrelevant; then by cost
     allClassifications.sort((a, b) => {
-        const order = { 'IRRELEVANT': 0, 'PARTIAL': 1, 'NECESSARY': 2, 'CRITICAL': 3 };
-        return (order[a.classification] || 0) - (order[b.classification] || 0) || (b.annual_cost || 0) - (a.annual_cost || 0);
+        const order = { 'CRITICAL': 0, 'NECESSARY': 1, 'PARTIAL': 2, 'IRRELEVANT': 3 };
+        return (order[a.classification] ?? 4) - (order[b.classification] ?? 4) || (b.annual_cost || 0) - (a.annual_cost || 0);
     });
 
     grid.innerHTML = allClassifications.map(c => `
