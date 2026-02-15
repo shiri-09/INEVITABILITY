@@ -1,0 +1,280 @@
+{
+    "scenario_name": "Cascade Collapse Demo",
+    "algorithm": "greedy",
+    "max_mcs_cardinality": 5,
+    "run_monte_carlo": false,
+    "nodes": [
+        {
+            "id": "attacker",
+            "type": "identity",
+            "name": "External Attacker",
+            "description": "Internet-based threat actor targeting the enterprise from outside",
+            "privilege_level": "external"
+        },
+        {
+            "id": "perimeter",
+            "type": "asset",
+            "name": "① Perimeter Gateway",
+            "description": "Edge firewall — first line of defense",
+            "criticality": "high"
+        },
+        {
+            "id": "dmz_server",
+            "type": "asset",
+            "name": "② DMZ Web Server",
+            "description": "Public-facing web application in DMZ",
+            "criticality": "high"
+        },
+        {
+            "id": "app_server",
+            "type": "asset",
+            "name": "③ Application Server",
+            "description": "Internal business logic tier",
+            "criticality": "high"
+        },
+        {
+            "id": "db_creds",
+            "type": "privilege",
+            "name": "④ Database Credentials",
+            "description": "Service account with database access — stored in config"
+        },
+        {
+            "id": "customer_db",
+            "type": "asset",
+            "name": "⑤ Customer Database",
+            "description": "50M customer records (PII + financial)",
+            "criticality": "critical",
+            "data_classification": [
+                "PII",
+                "financial"
+            ]
+        },
+        {
+            "id": "exfil",
+            "type": "asset",
+            "name": "⑥ Data Exfiltration",
+            "description": "Staged data exiting the network undetected",
+            "criticality": "critical"
+        },
+        {
+            "id": "ctrl_waf",
+            "type": "control",
+            "name": "WAF / Firewall",
+            "control_state": "active",
+            "control_type": "perimeter",
+            "annual_cost": 45000,
+            "description": "Web Application Firewall — sole perimeter defense",
+            "effectiveness": 0.9,
+            "bypass_probability": 0.1
+        },
+        {
+            "id": "ctrl_ids",
+            "type": "control",
+            "name": "IDS / IPS",
+            "control_state": "active",
+            "control_type": "detection",
+            "annual_cost": 80000,
+            "description": "Intrusion detection — guards the DMZ boundary",
+            "effectiveness": 0.7,
+            "bypass_probability": 0.3
+        },
+        {
+            "id": "ctrl_segmentation",
+            "type": "control",
+            "name": "Network Segmentation",
+            "control_state": "active",
+            "control_type": "segmentation",
+            "annual_cost": 60000,
+            "description": "VLAN isolation between DMZ and internal network",
+            "effectiveness": 0.8,
+            "bypass_probability": 0.2
+        },
+        {
+            "id": "ctrl_pam",
+            "type": "control",
+            "name": "Privileged Access Mgmt",
+            "control_state": "active",
+            "control_type": "authorization",
+            "annual_cost": 120000,
+            "description": "PAM vault for database credential access",
+            "effectiveness": 0.9,
+            "bypass_probability": 0.1
+        },
+        {
+            "id": "ctrl_encryption",
+            "type": "control",
+            "name": "Database Encryption",
+            "control_state": "active",
+            "control_type": "encryption",
+            "annual_cost": 35000,
+            "description": "Transparent data encryption at rest",
+            "effectiveness": 0.75,
+            "bypass_probability": 0.25
+        },
+        {
+            "id": "ctrl_dlp",
+            "type": "control",
+            "name": "Data Loss Prevention",
+            "control_state": "active",
+            "control_type": "prevention",
+            "annual_cost": 90000,
+            "description": "DLP agent monitoring egress traffic",
+            "effectiveness": 0.6,
+            "bypass_probability": 0.4
+        }
+    ],
+    "edges": [
+        {
+            "source": "attacker",
+            "target": "perimeter",
+            "edge_type": "access",
+            "label": "Probe public-facing services",
+            "exploit_probability": 0.80
+        },
+        {
+            "source": "perimeter",
+            "target": "dmz_server",
+            "edge_type": "access",
+            "label": "Exploit web app vulnerability",
+            "exploit_probability": 0.75
+        },
+        {
+            "source": "dmz_server",
+            "target": "app_server",
+            "edge_type": "lateral",
+            "label": "Lateral pivot from DMZ to internal app tier",
+            "exploit_probability": 0.70
+        },
+        {
+            "source": "app_server",
+            "target": "db_creds",
+            "edge_type": "privilege",
+            "label": "Harvest plaintext DB credentials from config",
+            "exploit_probability": 0.75
+        },
+        {
+            "source": "db_creds",
+            "target": "customer_db",
+            "edge_type": "access",
+            "label": "Connect to production database",
+            "exploit_probability": 0.90
+        },
+        {
+            "source": "customer_db",
+            "target": "exfil",
+            "edge_type": "access",
+            "label": "Stage and exfiltrate 50M customer records",
+            "exploit_probability": 0.85
+        },
+        {
+            "source": "ctrl_waf",
+            "target": "perimeter",
+            "edge_type": "control",
+            "label": "WAF blocks exploit payloads at edge"
+        },
+        {
+            "source": "ctrl_ids",
+            "target": "dmz_server",
+            "edge_type": "control",
+            "label": "IDS detects intrusion attempt in DMZ"
+        },
+        {
+            "source": "ctrl_segmentation",
+            "target": "app_server",
+            "edge_type": "control",
+            "label": "VLANs block DMZ→internal lateral movement"
+        },
+        {
+            "source": "ctrl_pam",
+            "target": "db_creds",
+            "edge_type": "control",
+            "label": "PAM vault prevents credential harvesting"
+        },
+        {
+            "source": "ctrl_encryption",
+            "target": "customer_db",
+            "edge_type": "control",
+            "label": "TDE renders stolen data unusable"
+        },
+        {
+            "source": "ctrl_dlp",
+            "target": "exfil",
+            "edge_type": "control",
+            "label": "DLP blocks unauthorized data egress"
+        }
+    ],
+    "goals": [
+        {
+            "id": "g_perimeter_breach",
+            "name": "① Perimeter Breach",
+            "description": "Attacker bypasses perimeter defenses",
+            "template": "custom",
+            "target_assets": [
+                "perimeter"
+            ],
+            "required_conditions": [],
+            "priority": "medium",
+            "threshold": 0.7
+        },
+        {
+            "id": "g_dmz_compromise",
+            "name": "② DMZ Compromise",
+            "description": "Attacker compromises server in DMZ",
+            "template": "custom",
+            "target_assets": [
+                "dmz_server"
+            ],
+            "required_conditions": [],
+            "priority": "high",
+            "threshold": 0.7
+        },
+        {
+            "id": "g_lateral_movement",
+            "name": "③ Internal Pivot",
+            "description": "Attacker reaches internal application tier",
+            "template": "custom",
+            "target_assets": [
+                "app_server"
+            ],
+            "required_conditions": [],
+            "priority": "high",
+            "threshold": 0.7
+        },
+        {
+            "id": "g_cred_theft",
+            "name": "④ Credential Theft",
+            "description": "Attacker obtains database credentials",
+            "template": "custom",
+            "target_assets": [
+                "db_creds"
+            ],
+            "required_conditions": [],
+            "priority": "critical",
+            "threshold": 0.7
+        },
+        {
+            "id": "g_db_access",
+            "name": "⑤ Database Access",
+            "description": "Attacker accesses customer database",
+            "template": "custom",
+            "target_assets": [
+                "customer_db"
+            ],
+            "required_conditions": [],
+            "priority": "critical",
+            "threshold": 0.7
+        },
+        {
+            "id": "g_data_exfil",
+            "name": "⑥ Data Exfiltration",
+            "description": "50M customer records exfiltrated",
+            "template": "data_exfiltration",
+            "target_assets": [
+                "exfil"
+            ],
+            "required_conditions": [],
+            "priority": "critical",
+            "threshold": 0.7
+        }
+    ]
+}

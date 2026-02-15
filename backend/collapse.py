@@ -122,12 +122,13 @@ class CollapseEngine:
     def simulate_collapse(self, goals: list[GoalPredicate]) -> list[CollapseFrame]:
         """Generate frame-by-frame collapse simulation data.
         
-        Progressively disables controls in order of collapse radius and
-        generates visualization frames showing inevitability propagation.
+        Progressively disables controls and recomputes which remaining
+        control has the highest impact, creating a true cascading collapse
+        where each failure reveals the next weakest link.
         """
-        metrics = self.compute_all_collapse_metrics(goals)
         frames = []
         disabled_controls: dict[str, bool] = {}
+        already_disabled: set[str] = set()
 
         # Frame 0: Baseline (all controls active)
         frame0_goals = {}
@@ -151,23 +152,73 @@ class CollapseEngine:
             narration="Baseline state with all security controls active.",
         ))
 
-        # Progressive collapse frames
+        # Progressive collapse: recompute metrics after each disable
         prev_goal_states = dict(frame0_goals)
+        step_counter = 0
+        all_controls = self.scm.graph.get_controls()
+        max_steps = len(all_controls)  # Safety limit
 
-        for i, metric in enumerate(metrics):
-            if metric.collapse_radius == 0:
-                continue  # Skip controls that don't cause collapse
+        while step_counter < max_steps:
+            # Recompute collapse metrics for remaining active controls
+            best_metric = None
+            best_rank = -1
 
-            disabled_controls[metric.control_id] = False
+            for ctrl in all_controls:
+                if ctrl.id in already_disabled:
+                    continue
+
+                # Compute impact of disabling this control given current state
+                interventions_on = dict(disabled_controls)
+                interventions_on[ctrl.id] = True
+                interventions_off = dict(disabled_controls)
+                interventions_off[ctrl.id] = False
+
+                goals_collapsed = 0
+                total_increase = 0.0
+
+                for goal in goals:
+                    score_with = self.solver.compute_inevitability(goal, interventions_on)
+                    score_without = self.solver.compute_inevitability(goal, interventions_off)
+                    delta = score_without.score - score_with.score
+
+                    if (score_with.score < goal.threshold and
+                            score_without.score >= goal.threshold):
+                        goals_collapsed += 1
+                    total_increase += max(0, delta)
+
+                rank = goals_collapsed * 100 + total_increase * 10
+
+                if rank > best_rank:
+                    best_rank = rank
+                    best_metric = CollapseMetrics(
+                        control_id=ctrl.id,
+                        control_name=ctrl.name,
+                        collapse_radius=goals_collapsed,
+                        total_inevitability_increase=round(total_increase, 3),
+                        single_point_of_failure_count=0,
+                        criticality_rank=rank,
+                    )
+
+            # Stop if no control causes further collapse
+            if not best_metric or best_metric.collapse_radius == 0:
+                # Check if any control still has nonzero increase
+                if best_metric and best_metric.total_inevitability_increase > 0:
+                    pass  # Still worth showing
+                else:
+                    break
+
+            step_counter += 1
+            already_disabled.add(best_metric.control_id)
+            disabled_controls[best_metric.control_id] = False
 
             goal_states = {}
             newly_inevitable_goals = []
 
             for goal in goals:
                 result = self.solver.compute_inevitability(goal, disabled_controls)
-                prev_score = prev_goal_states.get(goal.id, {}).get("score", 0)
                 status = self._classify_status(result.score, goal.threshold)
-                newly = status == "inevitable" and prev_goal_states.get(goal.id, {}).get("status") != "inevitable"
+                newly = (status == "inevitable" and
+                         prev_goal_states.get(goal.id, {}).get("status") != "inevitable")
 
                 goal_states[goal.id] = {
                     "name": goal.name,
@@ -184,16 +235,20 @@ class CollapseEngine:
             # Generate narration
             if newly_inevitable_goals:
                 narration = (
-                    f"Disabling {metric.control_name} causes {len(newly_inevitable_goals)} goal(s) "
-                    f"to become inevitable: {', '.join(newly_inevitable_goals)}"
+                    f"Disabling {best_metric.control_name} causes "
+                    f"{len(newly_inevitable_goals)} goal(s) to become inevitable: "
+                    f"{', '.join(newly_inevitable_goals)}"
                 )
             else:
-                narration = f"Disabling {metric.control_name} increases risk but no goals crossed threshold yet."
+                narration = (
+                    f"Disabling {best_metric.control_name} increases risk "
+                    f"but no goals crossed threshold yet."
+                )
 
             frames.append(CollapseFrame(
-                step=i + 1,
-                control_disabled=metric.control_name,
-                label=f"{metric.control_name} Failure",
+                step=step_counter,
+                control_disabled=best_metric.control_name,
+                label=f"{best_metric.control_name} Failure",
                 node_states=node_states,
                 goal_states=goal_states,
                 narration=narration,
