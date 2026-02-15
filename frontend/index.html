@@ -364,11 +364,7 @@
                     placeholder="My Infrastructure Analysis" value="Custom Analysis">
             </div>
 
-            <!-- Mode Tabs -->
-            <div class="custom-tabs">
-                <button class="custom-tab active" onclick="switchCustomTab('json')" id="tab-json">JSON Editor</button>
-                <button class="custom-tab" onclick="switchCustomTab('visual')" id="tab-visual">Visual Builder</button>
-            </div>
+
 
             <!-- JSON Editor Mode -->
             <div id="custom-mode-json" class="custom-mode active">
@@ -400,75 +396,7 @@
 }'></textarea>
             </div>
 
-            <!-- Visual Builder Mode -->
-            <div id="custom-mode-visual" class="custom-mode">
-                <!-- Nodes -->
-                <div class="custom-builder-section">
-                    <div class="custom-section-header">
-                        <span>◆ Nodes</span>
-                        <button class="btn btn-sm btn-secondary" onclick="addNodeRow()">+ Add Node</button>
-                    </div>
-                    <div id="node-builder-rows">
-                        <div class="builder-row" data-row-type="node">
-                            <input type="text" placeholder="Node ID" class="builder-input node-id">
-                            <select class="builder-select node-type">
-                                <option value="asset">Asset</option>
-                                <option value="identity">Identity</option>
-                                <option value="control">Control</option>
-                                <option value="privilege">Privilege</option>
-                                <option value="channel">Channel</option>
-                                <option value="trust_boundary">Trust Boundary</option>
-                            </select>
-                            <input type="text" placeholder="Display Name" class="builder-input node-name">
-                            <input type="number" placeholder="Cost ($/yr)" class="builder-input node-cost"
-                                style="width:110px;">
-                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Edges -->
-                <div class="custom-builder-section">
-                    <div class="custom-section-header">
-                        <span>◆ Edges</span>
-                        <button class="btn btn-sm btn-secondary" onclick="addEdgeRow()">+ Add Edge</button>
-                    </div>
-                    <div id="edge-builder-rows">
-                        <div class="builder-row" data-row-type="edge">
-                            <input type="text" placeholder="Source Node ID" class="builder-input edge-source">
-                            <span style="color:var(--accent-cyan); font-weight:700;">→</span>
-                            <input type="text" placeholder="Target Node ID" class="builder-input edge-target">
-                            <select class="builder-select edge-type">
-                                <option value="access">Access</option>
-                                <option value="control">Control</option>
-                                <option value="lateral">Lateral</option>
-                                <option value="privilege">Privilege</option>
-                                <option value="escalation">Escalation</option>
-                                <option value="trust">Trust</option>
-                                <option value="dependency">Dependency</option>
-                            </select>
-                            <input type="text" placeholder="Label" class="builder-input edge-label">
-                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Goals -->
-                <div class="custom-builder-section">
-                    <div class="custom-section-header">
-                        <span>◆ Goals</span>
-                        <button class="btn btn-sm btn-secondary" onclick="addGoalRow()">+ Add Goal</button>
-                    </div>
-                    <div id="goal-builder-rows">
-                        <div class="builder-row" data-row-type="goal">
-                            <input type="text" placeholder="Goal Name" class="builder-input goal-name">
-                            <input type="text" placeholder="Target Asset IDs (comma-separated)"
-                                class="builder-input goal-targets" style="flex:2;">
-                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Templates -->
             <div class="custom-templates">
