@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INEVITABILITY — Structural Causal Goal Decompiler</title>
+    <meta name="description"
+        content="Structural Reverse-Engineered Causal Goal Decompiler for Cybersecurity. Prove what's inevitable. Expose security theater.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- ═══ Navigation ═══ -->
+    <nav class="nav">
+        <div class="nav-brand">
+            <span class="nav-logo">◆</span>
+            <span class="nav-title">INEVITABILITY</span>
+            <span class="nav-version">v2.0</span>
+        </div>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" data-view="hero">Home</a>
+            <a href="#" class="nav-link" data-view="dashboard">Analysis</a>
+            <a href="#" class="nav-link" data-view="custom">Custom Analysis</a>
+            <a href="#" class="nav-link" data-view="collapse">Collapse Sim</a>
+            <a href="#" class="nav-link" data-view="breach">Case Studies</a>
+        </div>
+        <div class="nav-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Engine Ready</span>
+        </div>
+    </nav>
+
+    <!-- ═══ Hero Section ═══ -->
+    <section id="view-hero" class="view active">
+        <div class="hero">
+            <div class="hero-bg">
+                <div class="grid-overlay"></div>
+                <div class="glow glow-1"></div>
+                <div class="glow glow-2"></div>
+                <div class="glow glow-3"></div>
+            </div>
+
+            <div class="hero-content">
+                <div class="hero-badge">STRUCTURAL CAUSAL ANALYSIS ENGINE</div>
+                <h1 class="hero-title">
+                    <span class="hero-title-line">Prove What's</span>
+                    <span class="hero-title-accent">INEVITABLE</span>
+                </h1>
+                <p class="hero-subtitle">
+                    The first cybersecurity tool that mathematically proves which attacks are
+                    <strong>structurally inevitable</strong> — and which defenses are
+                    <strong>security theater</strong>.
+                </p>
+
+                <div class="hero-stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-breaches">8</div>
+                        <div class="stat-label">Historical Breaches Validated</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-theater">94.7%</div>
+                        <div class="stat-label">Theater Detection Accuracy</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-mcs">91.3%</div>
+                        <div class="stat-label">MCS Precision</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-speed">&lt;2s</div>
+                        <div class="stat-label">Analysis Time</div>
+                    </div>
+                </div>
+
+                <div class="hero-actions">
+                    <!-- Primary CTA row -->
+                    <div class="hero-cta-row">
+                        <button class="btn btn-primary btn-glow btn-lg" onclick="runDemoScenario('enterprise_demo')">
+                            <span class="btn-icon">▶</span> Run Live Analysis
+                        </button>
+                        <div class="adversary-selector">
+                            <div class="adversary-selector-label">
+                                <span class="adversary-icon">⚔</span> Adversary Profile
+                            </div>
+                            <div class="custom-select" id="adversary-select-wrapper">
+                                <input type="hidden" id="adversary-select" value="apt">
+                                <div class="custom-select-trigger" onclick="toggleAdversaryDropdown()">
+                                    <span class="custom-select-value">APT (Nation-State)</span>
+                                    <span class="custom-select-arrow">▾</span>
+                                </div>
+                                <div class="custom-select-options" id="adversary-options">
+                                    <div class="custom-select-option selected" data-value="apt"
+                                        onclick="selectAdversary(this)">
+                                        <span class="option-name">APT (Nation-State)</span>
+                                        <span class="option-desc">Elite group — high stealth</span>
+                                    </div>
+                                    <div class="custom-select-option" data-value="organized_crime"
+                                        onclick="selectAdversary(this)">
+                                        <span class="option-name">Organized Crime</span>
+                                        <span class="option-desc">Moderate skill, financial motive</span>
+                                    </div>
+                                    <div class="custom-select-option" data-value="script_kiddie"
+                                        onclick="selectAdversary(this)">
+                                        <span class="option-name">Script Kiddie</span>
+                                        <span class="option-desc">Low sophistication, noisy</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Case Studies grid -->
+                    <div class="hero-cases">
+                        <div class="hero-cases-label">Real-World Breach Case Studies</div>
+                        <div class="hero-cases-grid">
+                            <button class="btn btn-case" onclick="runDemoScenario('solarwinds')">
+                                <span class="case-icon">☀</span>
+                                <span class="case-name">SolarWinds</span>
+                                <span class="case-tag">Supply Chain</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('capital_one')">
+                                <span class="case-icon">🏦</span>
+                                <span class="case-name">Capital One</span>
+                                <span class="case-tag">Cloud SSRF</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('okta')">
+                                <span class="case-icon">🔑</span>
+                                <span class="case-name">Okta</span>
+                                <span class="case-tag">Identity</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('log4shell')">
+                                <span class="case-icon">🪵</span>
+                                <span class="case-name">Log4Shell</span>
+                                <span class="case-tag">RCE / CVE</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('equifax')">
+                                <span class="case-icon">📊</span>
+                                <span class="case-name">Equifax</span>
+                                <span class="case-tag">Data Breach</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hero-paradigm">
+                    <div class="paradigm-card paradigm-old">
+                        <div class="paradigm-label">OLD PARADIGM</div>
+                        <div class="paradigm-title">Reachability Analysis</div>
+                        <div class="paradigm-desc">"Can this path be reached?"</div>
+                        <div class="paradigm-icon">✗</div>
+                    </div>
+                    <div class="paradigm-arrow">→</div>
+                    <div class="paradigm-card paradigm-new">
+                        <div class="paradigm-label">INEVITABILITY</div>
+                        <div class="paradigm-title">Structural Necessity</div>
+                        <div class="paradigm-desc">"Is this outcome structurally necessary?"</div>
+                        <div class="paradigm-icon">✓</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ Dashboard Section ═══ -->
+    <section id="view-dashboard" class="view">
+        <div class="dashboard">
+            <!-- Loading -->
+            <div id="dashboard-loading" class="loading-overlay" style="display:none;">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">Running Structural + Probabilistic Analysis Engine...</div>
+                <div class="loading-sub">Computing inevitability scores, Monte Carlo simulation, control impact rankings
+                </div>
+            </div>
+
+            <!-- Header -->
+            <div class="dash-header">
+                <div>
+                    <h2 class="dash-title" id="dash-scenario-name">Analysis Results</h2>
+                    <p class="dash-subtitle" id="dash-computation-time"></p>
+                </div>
+                <div class="dash-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="showView('hero')">← Back</button>
+                </div>
+            </div>
+
+            <!-- Inevitability Scores -->
+            <div class="section-title">
+                <span class="section-icon">◆</span> Inevitability Scores
+            </div>
+            <div class="score-grid" id="score-grid"></div>
+
+            <!-- v2.0: Probabilistic Risk Engine -->
+            <div id="probabilistic-panel" style="margin-top:24px"></div>
+
+            <!-- Causal Graph -->
+            <div class="section-title">
+                <span class="section-icon">◆</span> Causal Attack Graph
+            </div>
+            <div class="graph-container">
+                <canvas id="causal-graph-canvas" width="1200" height="600"></canvas>
+            </div>
+
+            <!-- Assumption Toggle Panel -->
+            <div class="section-title">
+                <span class="section-icon">⚡</span> Assumption Control Panel — Toggle Live
+            </div>
+            <div class="toggle-panel" id="toggle-panel"></div>
+
+            <!-- MCS Results -->
+            <div class="section-title">
+                <span class="section-icon">◆</span> Minimal Causal Sets (MCS)
+            </div>
+            <div class="mcs-grid" id="mcs-grid"></div>
+
+            <!-- Security Theater -->
+            <div class="section-title">
+                <span class="section-icon">🎭</span> Security Theater Report
+            </div>
+            <div class="theater-grid" id="theater-grid"></div>
+
+            <!-- Economic Impact -->
+            <div class="section-title">
+                <span class="section-icon">💰</span> Economic Impact Analysis
+            </div>
+            <div class="economic-panel" id="economic-panel"></div>
+
+            <!-- Explanations -->
+            <div class="section-title">
+                <span class="section-icon">📋</span> Causal Explanations
+            </div>
+            <div class="explanation-panel" id="explanation-panel"></div>
+
+
+
+            <!-- Certification -->
+            <div class="section-title">
+                <span class="section-icon">🛡️</span> Security Certification Report
+            </div>
+            <div id="certification-panel"></div>
+
+        </div>
+    </section>
+
+    <!-- ═══ Collapse Simulation Section ═══ -->
+    <section id="view-collapse" class="view">
+        <div class="collapse-sim">
+            <div class="dash-header">
+                <div>
+                    <h2 class="dash-title">Structural Collapse Simulation</h2>
+                    <p class="dash-subtitle">Watch security controls fail one by one and see inevitability propagate</p>
+                </div>
+                <div class="dash-actions">
+                    <button class="btn btn-sm btn-primary" id="collapse-play-btn" onclick="playCollapse()">▶ Play
+                        Simulation</button>
+                    <button class="btn btn-sm btn-secondary" onclick="resetCollapse()">↺ Reset</button>
+                </div>
+            </div>
+
+            <div class="collapse-frame-info" id="collapse-frame-info">
+                <div class="frame-label">Step 0 — All Controls Active</div>
+                <div class="frame-narration">Click "Play Simulation" to see doom propagation.</div>
+            </div>
+
+            <div class="collapse-scores" id="collapse-scores"></div>
+
+            <div class="collapse-timeline" id="collapse-timeline"></div>
+        </div>
+    </section>
+
+    <!-- ═══ Breach Case Study Section ═══ -->
+    <section id="view-breach" class="view">
+        <div class="breach-viewer">
+            <div class="dash-header">
+                <div>
+                    <h2 class="dash-title" id="breach-title">Historical Breach Analysis</h2>
+                    <p class="dash-subtitle" id="breach-subtitle">Select a breach to analyze</p>
+                </div>
+            </div>
+
+            <div class="breach-cards" id="breach-cards">
+                <div class="breach-card" onclick="runDemoScenario('solarwinds')">
+                    <div class="breach-year">2020</div>
+                    <div class="breach-name">SolarWinds SUNBURST</div>
+                    <div class="breach-desc">Supply chain → SAML forging → email exfiltration</div>
+                    <div class="breach-tag">NATION STATE (APT29)</div>
+                </div>
+                <div class="breach-card" onclick="runDemoScenario('capital_one')">
+                    <div class="breach-year">2019</div>
+                    <div class="breach-name">Capital One</div>
+                    <div class="breach-desc">SSRF → IMDSv1 → IAM → S3 exfiltration</div>
+                    <div class="breach-tag">CLOUD MISCONFIGURATION</div>
+                </div>
+                <div class="breach-card" onclick="runDemoScenario('enterprise_demo')">
+                    <div class="breach-year">2024</div>
+                    <div class="breach-name">Synthetic Enterprise</div>
+                    <div class="breach-desc">AD + Cloud + CI/CD multi-goal analysis</div>
+                    <div class="breach-tag">MULTI-VECTOR</div>
+                </div>
+                <div class="breach-card" onclick="runDemoScenario('okta')">
+                    <div class="breach-year">2022</div>
+                    <div class="breach-name">Okta / Lapsus$</div>
+                    <div class="breach-desc">Third-party contractor → SuperUser console → 366 customer tenants</div>
+                    <div class="breach-tag">SUPPLY CHAIN</div>
+                </div>
+                <div class="breach-card" onclick="runDemoScenario('log4shell')">
+                    <div class="breach-year">2021</div>
+                    <div class="breach-name">Log4Shell</div>
+                    <div class="breach-desc">JNDI injection → RCE → cloud creds → S3 + K8s takeover</div>
+                    <div class="breach-tag">CVE-2021-44228</div>
+                </div>
+                <div class="breach-card" onclick="runDemoScenario('equifax')">
+                    <div class="breach-year">2017</div>
+                    <div class="breach-name">Equifax</div>
+                    <div class="breach-desc">Apache Struts → web shell → 148M records over 76 days</div>
+                    <div class="breach-tag">NATION STATE</div>
+                </div>
+            </div>
+
+            <div id="breach-detail" style="display:none;">
+                <div class="breach-timeline-panel" id="breach-timeline-panel"></div>
+                <div class="breach-headline" id="breach-headline"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ Custom Analysis Section ═══ -->
+    <section id="view-custom" class="view">
+        <div class="custom-analysis">
+            <div class="dash-header">
+                <div>
+                    <h2 class="dash-title">Custom Infrastructure Analysis</h2>
+                    <p class="dash-subtitle">Define your own infrastructure graph and run the full causal analysis
+                        engine</p>
+                </div>
+                <div class="dash-actions">
+                    <button class="btn btn-sm btn-secondary" onclick="showView('hero')">← Back</button>
+                </div>
+            </div>
+
+            <!-- Scenario Name -->
+            <div class="custom-name-row">
+                <label class="custom-label">Scenario Name</label>
+                <input type="text" id="custom-scenario-name" class="custom-input"
+                    placeholder="My Infrastructure Analysis" value="Custom Analysis">
+            </div>
+
+            <!-- Mode Tabs -->
+            <div class="custom-tabs">
+                <button class="custom-tab active" onclick="switchCustomTab('json')" id="tab-json">JSON Editor</button>
+                <button class="custom-tab" onclick="switchCustomTab('visual')" id="tab-visual">Visual Builder</button>
+            </div>
+
+            <!-- JSON Editor Mode -->
+            <div id="custom-mode-json" class="custom-mode active">
+                <div class="custom-section-header">
+                    <span>Paste or edit JSON (nodes, edges, goals)</span>
+                    <div>
+                        <label class="btn btn-sm btn-secondary" style="cursor:pointer;">
+                            📁 Upload JSON
+                            <input type="file" id="json-file-upload" accept=".json" style="display:none;"
+                                onchange="handleJsonUpload(event)">
+                        </label>
+                    </div>
+                </div>
+                <textarea id="custom-json-editor" class="custom-json-editor" spellcheck="false" placeholder='{
+  "nodes": [
+    { "id": "attacker", "type": "identity", "name": "External Attacker" },
+    { "id": "web_server", "type": "asset", "name": "Web Server" },
+    { "id": "firewall", "type": "control", "name": "Firewall", "control_state": "active", "annual_cost": 50000 },
+    { "id": "database", "type": "asset", "name": "Production Database", "criticality": "critical" }
+  ],
+  "edges": [
+    { "source": "attacker", "target": "web_server", "edge_type": "access", "label": "HTTP Access" },
+    { "source": "firewall", "target": "web_server", "edge_type": "control", "label": "Blocks external" },
+    { "source": "web_server", "target": "database", "edge_type": "lateral", "label": "DB Connection" }
+  ],
+  "goals": [
+    { "name": "Data Exfiltration", "target_assets": ["database"], "required_conditions": ["database"] }
+  ]
+}'></textarea>
+            </div>
+
+            <!-- Visual Builder Mode -->
+            <div id="custom-mode-visual" class="custom-mode">
+                <!-- Nodes -->
+                <div class="custom-builder-section">
+                    <div class="custom-section-header">
+                        <span>◆ Nodes</span>
+                        <button class="btn btn-sm btn-secondary" onclick="addNodeRow()">+ Add Node</button>
+                    </div>
+                    <div id="node-builder-rows">
+                        <div class="builder-row" data-row-type="node">
+                            <input type="text" placeholder="Node ID" class="builder-input node-id">
+                            <select class="builder-select node-type">
+                                <option value="asset">Asset</option>
+                                <option value="identity">Identity</option>
+                                <option value="control">Control</option>
+                                <option value="privilege">Privilege</option>
+                                <option value="channel">Channel</option>
+                                <option value="trust_boundary">Trust Boundary</option>
+                            </select>
+                            <input type="text" placeholder="Display Name" class="builder-input node-name">
+                            <input type="number" placeholder="Cost ($/yr)" class="builder-input node-cost"
+                                style="width:110px;">
+                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Edges -->
+                <div class="custom-builder-section">
+                    <div class="custom-section-header">
+                        <span>◆ Edges</span>
+                        <button class="btn btn-sm btn-secondary" onclick="addEdgeRow()">+ Add Edge</button>
+                    </div>
+                    <div id="edge-builder-rows">
+                        <div class="builder-row" data-row-type="edge">
+                            <input type="text" placeholder="Source Node ID" class="builder-input edge-source">
+                            <span style="color:var(--accent-cyan); font-weight:700;">→</span>
+                            <input type="text" placeholder="Target Node ID" class="builder-input edge-target">
+                            <select class="builder-select edge-type">
+                                <option value="access">Access</option>
+                                <option value="control">Control</option>
+                                <option value="lateral">Lateral</option>
+                                <option value="privilege">Privilege</option>
+                                <option value="escalation">Escalation</option>
+                                <option value="trust">Trust</option>
+                                <option value="dependency">Dependency</option>
+                            </select>
+                            <input type="text" placeholder="Label" class="builder-input edge-label">
+                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Goals -->
+                <div class="custom-builder-section">
+                    <div class="custom-section-header">
+                        <span>◆ Goals</span>
+                        <button class="btn btn-sm btn-secondary" onclick="addGoalRow()">+ Add Goal</button>
+                    </div>
+                    <div id="goal-builder-rows">
+                        <div class="builder-row" data-row-type="goal">
+                            <input type="text" placeholder="Goal Name" class="builder-input goal-name">
+                            <input type="text" placeholder="Target Asset IDs (comma-separated)"
+                                class="builder-input goal-targets" style="flex:2;">
+                            <button class="builder-remove" onclick="this.closest('.builder-row').remove()">✕</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Templates -->
+            <div class="custom-templates">
+                <div class="custom-section-header">
+                    <span>◆ Starter Templates</span>
+                </div>
+                <div class="template-grid">
+                    <div class="template-card" onclick="loadTemplate('simple_network')">
+                        <div class="template-icon">🌐</div>
+                        <div class="template-name">Simple Network</div>
+                        <div class="template-desc">3 nodes, firewall + server + database</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('cloud_iam')">
+                        <div class="template-icon">☁️</div>
+                        <div class="template-name">Cloud IAM</div>
+                        <div class="template-desc">IAM role → EC2 → S3 with MFA control</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('ad_escalation')">
+                        <div class="template-icon">🏢</div>
+                        <div class="template-name">AD Escalation</div>
+                        <div class="template-desc">User → Admin → Domain Controller</div>
+                    </div>
+                    <div class="template-card" onclick="loadTemplate('supply_chain')">
+                        <div class="template-icon">🔗</div>
+                        <div class="template-name">Supply Chain</div>
+                        <div class="template-desc">Vendor → Build → Deploy → Production</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Run Button -->
+            <div class="custom-run-section">
+                <div id="custom-error" class="custom-error" style="display:none;"></div>
+                <button class="btn btn-primary btn-glow btn-lg" onclick="runCustomAnalysis()" id="custom-run-btn">
+                    <span class="btn-icon">▶</span> Run Causal Analysis
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
