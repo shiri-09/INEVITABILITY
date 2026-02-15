@@ -77,67 +77,53 @@ def build_solarwinds() -> tuple[CausalGraph, list[GoalPredicate], BreachCaseStud
         InfraNode(id="saml_token", type=NodeType.PRIVILEGE, name="Forged SAML Token", description="Golden SAML — forged authentication token"),
         InfraNode(id="o365_mailbox", type=NodeType.ASSET, name="O365 Executive Mailboxes", description="Target email data", criticality=Criticality.CRITICAL, data_classification=["confidential", "PII"]),
 
-        # Controls (some theater, some real)
-        InfraNode(id="ctrl_code_signing", type=NodeType.CONTROL, name="Code Signing", control_state=ControlState.ACTIVE, control_type="integrity", annual_cost=50000, description="Code signing for Orion builds"),
-        InfraNode(id="ctrl_edr", type=NodeType.CONTROL, name="EDR (Endpoint Detection)", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=180000, description="CrowdStrike/Carbon Black on endpoints"),
-        InfraNode(id="ctrl_siem", type=NodeType.CONTROL, name="SIEM Monitoring", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=220000, description="Splunk SIEM for log analysis"),
-        InfraNode(id="ctrl_mfa", type=NodeType.CONTROL, name="MFA on Admin Accounts", control_state=ControlState.ACTIVE, control_type="authentication", annual_cost=15000, description="Multi-factor authentication"),
-        InfraNode(id="ctrl_build_isolation", type=NodeType.CONTROL, name="Build Pipeline Isolation", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=0, description="Isolated build environment"),
-        InfraNode(id="ctrl_saml_monitoring", type=NodeType.CONTROL, name="SAML Token Audit", control_state=ControlState.INACTIVE, control_type="detection", annual_cost=0, description="Monitor for anomalous SAML assertions"),
-        InfraNode(id="ctrl_network_seg", type=NodeType.CONTROL, name="Network Segmentation", control_state=ControlState.PARTIAL, control_type="segmentation", annual_cost=45000, description="VLAN segmentation — but monitoring tools are exempted"),
-        InfraNode(id="ctrl_waf", type=NodeType.CONTROL, name="WAF", control_state=ControlState.ACTIVE, control_type="perimeter", annual_cost=35000, description="Web Application Firewall"),
+        # Controls (some theater, some real) — v2.0: effectiveness + bypass_probability
+        InfraNode(id="ctrl_code_signing", type=NodeType.CONTROL, name="Code Signing", control_state=ControlState.ACTIVE, control_type="integrity", annual_cost=50000, description="Code signing for Orion builds", effectiveness=0.1, bypass_probability=0.9),
+        InfraNode(id="ctrl_edr", type=NodeType.CONTROL, name="EDR (Endpoint Detection)", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=180000, description="CrowdStrike/Carbon Black on endpoints", effectiveness=0.65, bypass_probability=0.35),
+        InfraNode(id="ctrl_siem", type=NodeType.CONTROL, name="SIEM Monitoring", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=220000, description="Splunk SIEM for log analysis", effectiveness=0.55, bypass_probability=0.45),
+        InfraNode(id="ctrl_mfa", type=NodeType.CONTROL, name="MFA on Admin Accounts", control_state=ControlState.ACTIVE, control_type="authentication", annual_cost=15000, description="Multi-factor authentication", effectiveness=0.85, bypass_probability=0.15),
+        InfraNode(id="ctrl_build_isolation", type=NodeType.CONTROL, name="Build Pipeline Isolation", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=0, description="Isolated build environment", effectiveness=0.92, bypass_probability=0.08),
+        InfraNode(id="ctrl_saml_monitoring", type=NodeType.CONTROL, name="SAML Token Audit", control_state=ControlState.INACTIVE, control_type="detection", annual_cost=0, description="Monitor for anomalous SAML assertions", effectiveness=0.88, bypass_probability=0.12),
+        InfraNode(id="ctrl_network_seg", type=NodeType.CONTROL, name="Network Segmentation", control_state=ControlState.PARTIAL, control_type="segmentation", annual_cost=45000, description="VLAN segmentation — but monitoring tools are exempted", effectiveness=0.40, bypass_probability=0.60),
+        InfraNode(id="ctrl_waf", type=NodeType.CONTROL, name="WAF", control_state=ControlState.ACTIVE, control_type="perimeter", annual_cost=35000, description="Web Application Firewall", effectiveness=0.70, bypass_probability=0.30),
     ]
 
     edges = [
-        # Attack chain: APT29 → build server → malicious update
+        # Attack chain: APT29 → build server → malicious update — v2.0: exploit_probability
         InfraEdge(source="attacker", target="build_server", edge_type=EdgeType.ACCESS,
-                  label="Compromise build pipeline via supply chain",
+                  label="Compromise build pipeline via supply chain", exploit_probability=0.35,
                   constraint=EdgeConstraint(type=ConstraintType.CONDITIONAL, assumptions=["build_pipeline_accessible"])),
         InfraEdge(source="build_server", target="orion_source", edge_type=EdgeType.ACCESS,
-                  label="Access to source code repository"),
+                  label="Access to source code repository", exploit_probability=0.85),
         InfraEdge(source="orion_source", target="signed_update", edge_type=EdgeType.DEPENDENCY,
-                  label="Inject SUNBURST backdoor into build"),
+                  label="Inject SUNBURST backdoor into build", exploit_probability=0.75),
 
-        # Code signing DOESN'T HELP — the malicious code gets signed legitimately
-        # This is a DEPENDENCY, not a CONTROL — signing enables the attack
         InfraEdge(source="ctrl_code_signing", target="signed_update", edge_type=EdgeType.DEPENDENCY,
-                  label="Signs the update (including malicious code)"),
+                  label="Signs the update (including malicious code)", exploit_probability=0.95),
 
-        # Build isolation would have helped — but was inactive
         InfraEdge(source="ctrl_build_isolation", target="build_server", edge_type=EdgeType.CONTROL,
-                  label="Would isolate build environment"),
+                  label="Would isolate build environment", exploit_probability=0.5),
 
-        # Malicious update → customer installation
         InfraEdge(source="signed_update", target="orion_server", edge_type=EdgeType.DEPENDENCY,
-                  label="Customer installs signed update"),
+                  label="Customer installs signed update", exploit_probability=0.90),
 
-        # Orion server → ADFS (lateral movement via network access)
         InfraEdge(source="orion_server", target="adfs_server", edge_type=EdgeType.LATERAL,
-                  label="Orion monitoring agent has network access to ADFS"),
+                  label="Orion monitoring agent has network access to ADFS", exploit_probability=0.65),
 
-        # Network segmentation should block this — but monitoring tools need broad access
         InfraEdge(source="ctrl_network_seg", target="orion_server", edge_type=EdgeType.CONTROL,
-                  label="Segmentation between monitoring and identity tiers"),
+                  label="Segmentation between monitoring and identity tiers", exploit_probability=0.5),
 
-        # ADFS → SAML token forging (Golden SAML)
         InfraEdge(source="adfs_server", target="saml_token", edge_type=EdgeType.ESCALATION,
-                  label="Extract SAML signing certificate → forge tokens"),
+                  label="Extract SAML signing certificate → forge tokens", exploit_probability=0.70),
 
-        # SAML token → O365 access
         InfraEdge(source="saml_token", target="o365_mailbox", edge_type=EdgeType.ACCESS,
-                  label="Forged SAML token grants O365 access"),
+                  label="Forged SAML token grants O365 access", exploit_probability=0.95),
 
-        # SAML monitoring would detect anomalous tokens
         InfraEdge(source="ctrl_saml_monitoring", target="saml_token", edge_type=EdgeType.CONTROL,
-                  label="Detect anomalous SAML assertions"),
+                  label="Detect anomalous SAML assertions", exploit_probability=0.5),
 
-        # MFA doesn't help — Golden SAML bypasses MFA entirely
         InfraEdge(source="ctrl_mfa", target="customer_admin", edge_type=EdgeType.CONTROL,
-                  label="MFA on admin accounts"),
-
-        # EDR doesn't detect — SUNBURST uses legitimate signed DLL
-        # WAF is completely irrelevant — attack doesn't use web layer
-        # SIEM should detect but relies on rules for known patterns
+                  label="MFA on admin accounts", exploit_probability=0.5),
     ]
 
     graph = CausalGraph(
@@ -212,42 +198,40 @@ def build_capital_one() -> tuple[CausalGraph, list[GoalPredicate], BreachCaseStu
         InfraNode(id="s3_buckets", type=NodeType.ASSET, name="S3 Data Buckets", description="106M credit card records, SSNs", criticality=Criticality.CRITICAL, data_classification=["PII", "financial", "regulated"]),
         InfraNode(id="temp_creds", type=NodeType.PRIVILEGE, name="Temporary IAM Credentials", description="STS credentials from IMDS role"),
 
-        # Controls
-        InfraNode(id="ctrl_waf_co", type=NodeType.CONTROL, name="WAF Rules", control_state=ControlState.ACTIVE, control_type="perimeter", annual_cost=40000),
-        InfraNode(id="ctrl_imdsv2", type=NodeType.CONTROL, name="IMDSv2 Enforcement", control_state=ControlState.INACTIVE, control_type="configuration", annual_cost=0, description="Require IMDSv2 token for metadata access"),
-        InfraNode(id="ctrl_iam_scope", type=NodeType.CONTROL, name="IAM Least Privilege", control_state=ControlState.INACTIVE, control_type="authorization", annual_cost=0, description="Scope IAM role to specific S3 prefixes"),
-        InfraNode(id="ctrl_vpc_endpoint", type=NodeType.CONTROL, name="VPC Endpoint Policy", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=0, description="Restrict S3 API calls via VPC endpoint"),
-        InfraNode(id="ctrl_guardduty", type=NodeType.CONTROL, name="GuardDuty", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=25000, description="AWS threat detection"),
-        InfraNode(id="ctrl_cloudtrail", type=NodeType.CONTROL, name="CloudTrail Alerting", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=15000, description="API call logging and alerting"),
-        InfraNode(id="ctrl_encryption", type=NodeType.CONTROL, name="S3 Encryption (SSE-S3)", control_state=ControlState.ACTIVE, control_type="encryption", annual_cost=5000, description="Server-side encryption at rest"),
+        # Controls — v2.0: effectiveness + bypass_probability
+        InfraNode(id="ctrl_waf_co", type=NodeType.CONTROL, name="WAF Rules", control_state=ControlState.ACTIVE, control_type="perimeter", annual_cost=40000, effectiveness=0.30, bypass_probability=0.70),
+        InfraNode(id="ctrl_imdsv2", type=NodeType.CONTROL, name="IMDSv2 Enforcement", control_state=ControlState.INACTIVE, control_type="configuration", annual_cost=0, description="Require IMDSv2 token for metadata access", effectiveness=0.95, bypass_probability=0.05),
+        InfraNode(id="ctrl_iam_scope", type=NodeType.CONTROL, name="IAM Least Privilege", control_state=ControlState.INACTIVE, control_type="authorization", annual_cost=0, description="Scope IAM role to specific S3 prefixes", effectiveness=0.90, bypass_probability=0.10),
+        InfraNode(id="ctrl_vpc_endpoint", type=NodeType.CONTROL, name="VPC Endpoint Policy", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=0, description="Restrict S3 API calls via VPC endpoint", effectiveness=0.85, bypass_probability=0.15),
+        InfraNode(id="ctrl_guardduty", type=NodeType.CONTROL, name="GuardDuty", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=25000, description="AWS threat detection", effectiveness=0.50, bypass_probability=0.50),
+        InfraNode(id="ctrl_cloudtrail", type=NodeType.CONTROL, name="CloudTrail Alerting", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=15000, description="API call logging and alerting", effectiveness=0.45, bypass_probability=0.55),
+        InfraNode(id="ctrl_encryption", type=NodeType.CONTROL, name="S3 Encryption (SSE-S3)", control_state=ControlState.ACTIVE, control_type="encryption", annual_cost=5000, description="Server-side encryption at rest", effectiveness=0.15, bypass_probability=0.85),
     ]
 
     edges = [
-        # Attack chain
+        # Attack chain — v2.0: exploit_probability
         InfraEdge(source="attacker_co", target="waf_proxy", edge_type=EdgeType.ACCESS,
-                  label="SSRF via misconfigured WAF reverse proxy",
+                  label="SSRF via misconfigured WAF reverse proxy", exploit_probability=0.70,
                   constraint=EdgeConstraint(type=ConstraintType.CONDITIONAL, assumptions=["ssrf_vulnerability_exists"])),
         InfraEdge(source="waf_proxy", target="imds_v1", edge_type=EdgeType.ACCESS,
-                  label="SSRF → request to 169.254.169.254 (IMDSv1)"),
+                  label="SSRF → request to 169.254.169.254 (IMDSv1)", exploit_probability=0.95),
         InfraEdge(source="imds_v1", target="temp_creds", edge_type=EdgeType.PRIVILEGE,
-                  label="IMDSv1 returns IAM role credentials without token"),
+                  label="IMDSv1 returns IAM role credentials without token", exploit_probability=0.99),
         InfraEdge(source="temp_creds", target="iam_role", edge_type=EdgeType.PRIVILEGE,
-                  label="Temporary credentials assume IAM role"),
+                  label="Temporary credentials assume IAM role", exploit_probability=0.99),
         InfraEdge(source="iam_role", target="s3_buckets", edge_type=EdgeType.ACCESS,
-                  label="Over-privileged role has s3:GetObject on all buckets"),
+                  label="Over-privileged role has s3:GetObject on all buckets", exploit_probability=0.95),
 
         # Controls
         InfraEdge(source="ctrl_imdsv2", target="imds_v1", edge_type=EdgeType.CONTROL,
-                  label="IMDSv2 would require session token (blocks SSRF)"),
+                  label="IMDSv2 would require session token (blocks SSRF)", exploit_probability=0.5),
         InfraEdge(source="ctrl_iam_scope", target="iam_role", edge_type=EdgeType.CONTROL,
-                  label="Least privilege would limit S3 access scope"),
+                  label="Least privilege would limit S3 access scope", exploit_probability=0.5),
         InfraEdge(source="ctrl_vpc_endpoint", target="s3_buckets", edge_type=EdgeType.CONTROL,
-                  label="VPC endpoint policy restricts S3 API calls"),
+                  label="VPC endpoint policy restricts S3 API calls", exploit_probability=0.5),
 
-        # Theater controls — present but didn't help
-        # WAF is the SSRF pivot point — NOT a blocking control here
         InfraEdge(source="ctrl_waf_co", target="waf_proxy", edge_type=EdgeType.DEPENDENCY,
-                  label="WAF rules — but the attack used WAF as the SSRF pivot"),
+                  label="WAF rules — but the attack used WAF as the SSRF pivot", exploit_probability=0.5),
     ]
 
     graph = CausalGraph(
@@ -328,48 +312,48 @@ def build_enterprise_demo() -> tuple[CausalGraph, list[GoalPredicate], BreachCas
         InfraNode(id="domain_admin_priv", type=NodeType.PRIVILEGE, name="Domain Admin Privilege", description="Full AD domain admin rights"),
         InfraNode(id="db_creds", type=NodeType.PRIVILEGE, name="Database Credentials", description="Production database connection strings in CI/CD"),
 
-        # Controls
-        InfraNode(id="ctrl_mfa_ent", type=NodeType.CONTROL, name="MFA Enforcement", control_state=ControlState.ACTIVE, control_type="authentication", annual_cost=12000),
-        InfraNode(id="ctrl_network_seg_ent", type=NodeType.CONTROL, name="Network Segmentation", control_state=ControlState.ACTIVE, control_type="segmentation", annual_cost=30000),
-        InfraNode(id="ctrl_pam", type=NodeType.CONTROL, name="Privileged Access Management", control_state=ControlState.INACTIVE, control_type="authorization", annual_cost=0),
-        InfraNode(id="ctrl_ci_isolation", type=NodeType.CONTROL, name="CI/CD Pipeline Isolation", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=0),
-        InfraNode(id="ctrl_secret_mgmt", type=NodeType.CONTROL, name="Secrets Management (Vault)", control_state=ControlState.INACTIVE, control_type="credential", annual_cost=0),
-        InfraNode(id="ctrl_edr_ent", type=NodeType.CONTROL, name="EDR Solution", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=95000),
-        InfraNode(id="ctrl_siem_ent", type=NodeType.CONTROL, name="SIEM/SOC", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=150000),
-        InfraNode(id="ctrl_dlp", type=NodeType.CONTROL, name="DLP Agent", control_state=ControlState.ACTIVE, control_type="prevention", annual_cost=65000),
-        InfraNode(id="ctrl_backup_immutable", type=NodeType.CONTROL, name="Immutable Backups", control_state=ControlState.INACTIVE, control_type="resilience", annual_cost=0),
-        InfraNode(id="ctrl_waf_ent", type=NodeType.CONTROL, name="WAF", control_state=ControlState.ACTIVE, control_type="perimeter", annual_cost=28000),
+        # Controls — v2.0: effectiveness + bypass_probability
+        InfraNode(id="ctrl_mfa_ent", type=NodeType.CONTROL, name="MFA Enforcement", control_state=ControlState.ACTIVE, control_type="authentication", annual_cost=12000, effectiveness=0.88, bypass_probability=0.12),
+        InfraNode(id="ctrl_network_seg_ent", type=NodeType.CONTROL, name="Network Segmentation", control_state=ControlState.ACTIVE, control_type="segmentation", annual_cost=30000, effectiveness=0.75, bypass_probability=0.25),
+        InfraNode(id="ctrl_pam", type=NodeType.CONTROL, name="Privileged Access Management", control_state=ControlState.INACTIVE, control_type="authorization", annual_cost=0, effectiveness=0.92, bypass_probability=0.08),
+        InfraNode(id="ctrl_ci_isolation", type=NodeType.CONTROL, name="CI/CD Pipeline Isolation", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=0, effectiveness=0.85, bypass_probability=0.15),
+        InfraNode(id="ctrl_secret_mgmt", type=NodeType.CONTROL, name="Secrets Management (Vault)", control_state=ControlState.INACTIVE, control_type="credential", annual_cost=0, effectiveness=0.90, bypass_probability=0.10),
+        InfraNode(id="ctrl_edr_ent", type=NodeType.CONTROL, name="EDR Solution", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=95000, effectiveness=0.60, bypass_probability=0.40),
+        InfraNode(id="ctrl_siem_ent", type=NodeType.CONTROL, name="SIEM/SOC", control_state=ControlState.ACTIVE, control_type="detection", annual_cost=150000, effectiveness=0.55, bypass_probability=0.45),
+        InfraNode(id="ctrl_dlp", type=NodeType.CONTROL, name="DLP Agent", control_state=ControlState.ACTIVE, control_type="prevention", annual_cost=65000, effectiveness=0.50, bypass_probability=0.50),
+        InfraNode(id="ctrl_backup_immutable", type=NodeType.CONTROL, name="Immutable Backups", control_state=ControlState.INACTIVE, control_type="resilience", annual_cost=0, effectiveness=0.95, bypass_probability=0.05),
+        InfraNode(id="ctrl_waf_ent", type=NodeType.CONTROL, name="WAF", control_state=ControlState.ACTIVE, control_type="perimeter", annual_cost=28000, effectiveness=0.65, bypass_probability=0.35),
     ]
 
     edges = [
-        # Contractor path (no MFA → VPN → lateral movement)
-        InfraEdge(source="contractor", target="vpn_gateway", edge_type=EdgeType.ACCESS, label="VPN access without MFA"),
-        InfraEdge(source="vpn_gateway", target="ad_dc", edge_type=EdgeType.LATERAL, label="Flat network — VPN subnet reaches DC"),
-        InfraEdge(source="ad_dc", target="domain_admin_priv", edge_type=EdgeType.ESCALATION, label="Kerberoasting / DCSync"),
+        # Contractor path — v2.0: exploit_probability
+        InfraEdge(source="contractor", target="vpn_gateway", edge_type=EdgeType.ACCESS, label="VPN access without MFA", exploit_probability=0.80),
+        InfraEdge(source="vpn_gateway", target="ad_dc", edge_type=EdgeType.LATERAL, label="Flat network — VPN subnet reaches DC", exploit_probability=0.70),
+        InfraEdge(source="ad_dc", target="domain_admin_priv", edge_type=EdgeType.ESCALATION, label="Kerberoasting / DCSync", exploit_probability=0.55),
 
-        # Developer path (Git → CI/CD → prod)
-        InfraEdge(source="developer", target="git_repo", edge_type=EdgeType.ACCESS, label="Git push access"),
-        InfraEdge(source="git_repo", target="jenkins", edge_type=EdgeType.DEPENDENCY, label="Git push triggers CI/CD build"),
-        InfraEdge(source="jenkins", target="db_creds", edge_type=EdgeType.PRIVILEGE, label="Jenkins has prod DB connection strings"),
-        InfraEdge(source="db_creds", target="prod_db", edge_type=EdgeType.ACCESS, label="Database credentials grant full DB access"),
-        InfraEdge(source="jenkins", target="prod_server", edge_type=EdgeType.ACCESS, label="Jenkins deploys to production"),
+        # Developer path
+        InfraEdge(source="developer", target="git_repo", edge_type=EdgeType.ACCESS, label="Git push access", exploit_probability=0.90),
+        InfraEdge(source="git_repo", target="jenkins", edge_type=EdgeType.DEPENDENCY, label="Git push triggers CI/CD build", exploit_probability=0.95),
+        InfraEdge(source="jenkins", target="db_creds", edge_type=EdgeType.PRIVILEGE, label="Jenkins has prod DB connection strings", exploit_probability=0.85),
+        InfraEdge(source="db_creds", target="prod_db", edge_type=EdgeType.ACCESS, label="Database credentials grant full DB access", exploit_probability=0.95),
+        InfraEdge(source="jenkins", target="prod_server", edge_type=EdgeType.ACCESS, label="Jenkins deploys to production", exploit_probability=0.90),
 
         # IT Admin path
-        InfraEdge(source="it_admin", target="ad_dc", edge_type=EdgeType.ACCESS, label="Direct admin access to DC"),
-        InfraEdge(source="domain_admin_priv", target="prod_server", edge_type=EdgeType.ACCESS, label="Domain admin reaches all servers"),
-        InfraEdge(source="domain_admin_priv", target="backup_server", edge_type=EdgeType.ACCESS, label="Domain admin reaches backup"),
-        InfraEdge(source="domain_admin_priv", target="prod_db", edge_type=EdgeType.ACCESS, label="Domain admin reaches database"),
+        InfraEdge(source="it_admin", target="ad_dc", edge_type=EdgeType.ACCESS, label="Direct admin access to DC", exploit_probability=0.60),
+        InfraEdge(source="domain_admin_priv", target="prod_server", edge_type=EdgeType.ACCESS, label="Domain admin reaches all servers", exploit_probability=0.95),
+        InfraEdge(source="domain_admin_priv", target="backup_server", edge_type=EdgeType.ACCESS, label="Domain admin reaches backup", exploit_probability=0.90),
+        InfraEdge(source="domain_admin_priv", target="prod_db", edge_type=EdgeType.ACCESS, label="Domain admin reaches database", exploit_probability=0.95),
 
         # Service account path
-        InfraEdge(source="svc_account", target="jenkins", edge_type=EdgeType.ACCESS, label="Service account runs Jenkins"),
+        InfraEdge(source="svc_account", target="jenkins", edge_type=EdgeType.ACCESS, label="Service account runs Jenkins", exploit_probability=0.75),
 
         # Controls
-        InfraEdge(source="ctrl_mfa_ent", target="vpn_gateway", edge_type=EdgeType.CONTROL, label="MFA on VPN"),
-        InfraEdge(source="ctrl_network_seg_ent", target="ad_dc", edge_type=EdgeType.CONTROL, label="Segment DC from general network"),
-        InfraEdge(source="ctrl_pam", target="domain_admin_priv", edge_type=EdgeType.CONTROL, label="PAM controls domain admin usage"),
-        InfraEdge(source="ctrl_ci_isolation", target="jenkins", edge_type=EdgeType.CONTROL, label="Isolate CI/CD from production network"),
-        InfraEdge(source="ctrl_secret_mgmt", target="db_creds", edge_type=EdgeType.CONTROL, label="Vault rotates and restricts DB credentials"),
-        InfraEdge(source="ctrl_backup_immutable", target="backup_server", edge_type=EdgeType.CONTROL, label="Immutable backups prevent encryption"),
+        InfraEdge(source="ctrl_mfa_ent", target="vpn_gateway", edge_type=EdgeType.CONTROL, label="MFA on VPN", exploit_probability=0.5),
+        InfraEdge(source="ctrl_network_seg_ent", target="ad_dc", edge_type=EdgeType.CONTROL, label="Segment DC from general network", exploit_probability=0.5),
+        InfraEdge(source="ctrl_pam", target="domain_admin_priv", edge_type=EdgeType.CONTROL, label="PAM controls domain admin usage", exploit_probability=0.5),
+        InfraEdge(source="ctrl_ci_isolation", target="jenkins", edge_type=EdgeType.CONTROL, label="Isolate CI/CD from production network", exploit_probability=0.5),
+        InfraEdge(source="ctrl_secret_mgmt", target="db_creds", edge_type=EdgeType.CONTROL, label="Vault rotates and restricts DB credentials", exploit_probability=0.5),
+        InfraEdge(source="ctrl_backup_immutable", target="backup_server", edge_type=EdgeType.CONTROL, label="Immutable backups prevent encryption", exploit_probability=0.5),
     ]
 
     graph = CausalGraph(
@@ -451,21 +435,21 @@ def build_okta() -> tuple[CausalGraph, list[GoalPredicate], BreachCaseStudy]:
             InfraNode(id="customer_tenants", type=NodeType.ASSET, name="Customer Tenant Access", description="Ability to reset passwords and MFA for customer orgs"),
             InfraNode(id="customer_data", type=NodeType.ASSET, name="Customer Data Exposure", description="366 customer tenants potentially accessed"),
             # Controls
-            InfraNode(id="ctrl_mfa_okta", type=NodeType.CONTROL, name="Contractor MFA", control_state=ControlState.PARTIAL, control_type="authentication", annual_cost=25000, description="MFA on contractor accounts — but contractor bypassed"),
-            InfraNode(id="ctrl_pam_okta", type=NodeType.CONTROL, name="Privileged Access Management", control_state=ControlState.INACTIVE, control_type="pam", annual_cost=120000, description="PAM for superuser console — not enforced for contractors"),
-            InfraNode(id="ctrl_soc_okta", type=NodeType.CONTROL, name="SOC Monitoring", control_state=ControlState.ACTIVE, control_type="monitoring", annual_cost=200000, description="Security Operations Center — detected but 2-month response delay"),
-            InfraNode(id="ctrl_vendor_review", type=NodeType.CONTROL, name="Vendor Access Review", control_state=ControlState.INACTIVE, control_type="governance", annual_cost=50000, description="Quarterly vendor access reviews — not performed"),
+            InfraNode(id="ctrl_mfa_okta", type=NodeType.CONTROL, name="Contractor MFA", control_state=ControlState.PARTIAL, control_type="authentication", annual_cost=25000, description="MFA on contractor accounts — but contractor bypassed", effectiveness=0.60, bypass_probability=0.40),
+            InfraNode(id="ctrl_pam_okta", type=NodeType.CONTROL, name="Privileged Access Management", control_state=ControlState.INACTIVE, control_type="pam", annual_cost=120000, description="PAM for superuser console — not enforced for contractors", effectiveness=0.90, bypass_probability=0.10),
+            InfraNode(id="ctrl_soc_okta", type=NodeType.CONTROL, name="SOC Monitoring", control_state=ControlState.ACTIVE, control_type="monitoring", annual_cost=200000, description="Security Operations Center — detected but 2-month response delay", effectiveness=0.35, bypass_probability=0.65),
+            InfraNode(id="ctrl_vendor_review", type=NodeType.CONTROL, name="Vendor Access Review", control_state=ControlState.INACTIVE, control_type="governance", annual_cost=50000, description="Quarterly vendor access reviews — not performed", effectiveness=0.75, bypass_probability=0.25),
         ],
         edges=[
-            InfraEdge(source="attacker_lapsus", target="contractor_laptop", edge_type=EdgeType.ACCESS, label="Social engineering / credential purchase"),
-            InfraEdge(source="contractor_laptop", target="okta_superuser", edge_type=EdgeType.ACCESS, label="RDP to internal support tools"),
-            InfraEdge(source="okta_superuser", target="customer_tenants", edge_type=EdgeType.ESCALATION, label="SuperUser → tenant password/MFA reset"),
-            InfraEdge(source="customer_tenants", target="customer_data", edge_type=EdgeType.ACCESS, label="Tenant access → customer data"),
+            InfraEdge(source="attacker_lapsus", target="contractor_laptop", edge_type=EdgeType.ACCESS, label="Social engineering / credential purchase", exploit_probability=0.75),
+            InfraEdge(source="contractor_laptop", target="okta_superuser", edge_type=EdgeType.ACCESS, label="RDP to internal support tools", exploit_probability=0.80),
+            InfraEdge(source="okta_superuser", target="customer_tenants", edge_type=EdgeType.ESCALATION, label="SuperUser → tenant password/MFA reset", exploit_probability=0.90),
+            InfraEdge(source="customer_tenants", target="customer_data", edge_type=EdgeType.ACCESS, label="Tenant access → customer data", exploit_probability=0.95),
             # Controls
-            InfraEdge(source="ctrl_mfa_okta", target="contractor_laptop", edge_type=EdgeType.CONTROL, label="MFA should block contractor access"),
-            InfraEdge(source="ctrl_pam_okta", target="okta_superuser", edge_type=EdgeType.CONTROL, label="PAM should gate superuser access"),
-            InfraEdge(source="ctrl_soc_okta", target="customer_tenants", edge_type=EdgeType.CONTROL, label="SOC should detect lateral access to tenants"),
-            InfraEdge(source="ctrl_vendor_review", target="contractor_laptop", edge_type=EdgeType.CONTROL, label="Vendor access review should limit contractor scope"),
+            InfraEdge(source="ctrl_mfa_okta", target="contractor_laptop", edge_type=EdgeType.CONTROL, label="MFA should block contractor access", exploit_probability=0.5),
+            InfraEdge(source="ctrl_pam_okta", target="okta_superuser", edge_type=EdgeType.CONTROL, label="PAM should gate superuser access", exploit_probability=0.5),
+            InfraEdge(source="ctrl_soc_okta", target="customer_tenants", edge_type=EdgeType.CONTROL, label="SOC should detect lateral access to tenants", exploit_probability=0.5),
+            InfraEdge(source="ctrl_vendor_review", target="contractor_laptop", edge_type=EdgeType.CONTROL, label="Vendor access review should limit contractor scope", exploit_probability=0.5),
         ],
     )
 
@@ -518,25 +502,25 @@ def build_log4shell() -> tuple[CausalGraph, list[GoalPredicate], BreachCaseStudy
             InfraNode(id="s3_data", type=NodeType.ASSET, name="S3 Data Buckets", description="Sensitive data in S3 buckets accessible via stolen creds"),
             InfraNode(id="k8s_cluster", type=NodeType.ASSET, name="Kubernetes Cluster", description="Container orchestration cluster"),
             # Controls
-            InfraNode(id="ctrl_waf_log4j", type=NodeType.CONTROL, name="WAF Rules", control_state=ControlState.PARTIAL, control_type="waf", annual_cost=40000, description="WAF blocking JNDI patterns — but obfuscation bypasses exist"),
-            InfraNode(id="ctrl_imds_v2", type=NodeType.CONTROL, name="IMDSv2 Enforcement", control_state=ControlState.INACTIVE, control_type="cloud_config", annual_cost=0, description="Instance Metadata Service v2 — not enforced (free to enable!)"),
-            InfraNode(id="ctrl_iam_scope", type=NodeType.CONTROL, name="IAM Least Privilege", control_state=ControlState.INACTIVE, control_type="iam", annual_cost=30000, description="IAM role scoping — app role has S3:* and K8s admin"),
-            InfraNode(id="ctrl_patch", type=NodeType.CONTROL, name="Patch Management", control_state=ControlState.INACTIVE, control_type="vulnerability", annual_cost=60000, description="Log4j patch — not applied within 72 hours of CVE disclosure"),
-            InfraNode(id="ctrl_egress", type=NodeType.CONTROL, name="Egress Filtering", control_state=ControlState.INACTIVE, control_type="network", annual_cost=15000, description="Outbound LDAP/RMI filtering — not implemented"),
+            InfraNode(id="ctrl_waf_log4j", type=NodeType.CONTROL, name="WAF Rules", control_state=ControlState.PARTIAL, control_type="waf", annual_cost=40000, description="WAF blocking JNDI patterns — but obfuscation bypasses exist", effectiveness=0.40, bypass_probability=0.60),
+            InfraNode(id="ctrl_imds_v2", type=NodeType.CONTROL, name="IMDSv2 Enforcement", control_state=ControlState.INACTIVE, control_type="cloud_config", annual_cost=0, description="Instance Metadata Service v2 — not enforced (free to enable!)", effectiveness=0.95, bypass_probability=0.05),
+            InfraNode(id="ctrl_iam_scope", type=NodeType.CONTROL, name="IAM Least Privilege", control_state=ControlState.INACTIVE, control_type="iam", annual_cost=30000, description="IAM role scoping — app role has S3:* and K8s admin", effectiveness=0.88, bypass_probability=0.12),
+            InfraNode(id="ctrl_patch", type=NodeType.CONTROL, name="Patch Management", control_state=ControlState.INACTIVE, control_type="vulnerability", annual_cost=60000, description="Log4j patch — not applied within 72 hours of CVE disclosure", effectiveness=0.98, bypass_probability=0.02),
+            InfraNode(id="ctrl_egress", type=NodeType.CONTROL, name="Egress Filtering", control_state=ControlState.INACTIVE, control_type="network", annual_cost=15000, description="Outbound LDAP/RMI filtering — not implemented", effectiveness=0.85, bypass_probability=0.15),
         ],
         edges=[
-            InfraEdge(source="attacker_log4j", target="web_app", edge_type=EdgeType.ACCESS, label="Crafted HTTP request with JNDI payload"),
-            InfraEdge(source="web_app", target="jndi_rce", edge_type=EdgeType.ACCESS, label="Log4j processes malicious JNDI lookup"),
-            InfraEdge(source="jndi_rce", target="app_server", edge_type=EdgeType.ACCESS, label="JNDI callback → arbitrary code execution"),
-            InfraEdge(source="app_server", target="cloud_creds", edge_type=EdgeType.ESCALATION, label="Instance metadata / env vars → cloud creds"),
-            InfraEdge(source="cloud_creds", target="s3_data", edge_type=EdgeType.ACCESS, label="Stolen IAM creds → S3 bucket access"),
-            InfraEdge(source="cloud_creds", target="k8s_cluster", edge_type=EdgeType.ACCESS, label="Stolen IAM creds → K8s cluster admin"),
+            InfraEdge(source="attacker_log4j", target="web_app", edge_type=EdgeType.ACCESS, label="Crafted HTTP request with JNDI payload", exploit_probability=0.85),
+            InfraEdge(source="web_app", target="jndi_rce", edge_type=EdgeType.ACCESS, label="Log4j processes malicious JNDI lookup", exploit_probability=0.90),
+            InfraEdge(source="jndi_rce", target="app_server", edge_type=EdgeType.ACCESS, label="JNDI callback → arbitrary code execution", exploit_probability=0.80),
+            InfraEdge(source="app_server", target="cloud_creds", edge_type=EdgeType.ESCALATION, label="Instance metadata / env vars → cloud creds", exploit_probability=0.75),
+            InfraEdge(source="cloud_creds", target="s3_data", edge_type=EdgeType.ACCESS, label="Stolen IAM creds → S3 bucket access", exploit_probability=0.90),
+            InfraEdge(source="cloud_creds", target="k8s_cluster", edge_type=EdgeType.ACCESS, label="Stolen IAM creds → K8s cluster admin", exploit_probability=0.85),
             # Controls
-            InfraEdge(source="ctrl_waf_log4j", target="web_app", edge_type=EdgeType.CONTROL, label="WAF pattern matching for JNDI strings"),
-            InfraEdge(source="ctrl_imds_v2", target="cloud_creds", edge_type=EdgeType.CONTROL, label="IMDSv2 blocks unauthenticated metadata access"),
-            InfraEdge(source="ctrl_iam_scope", target="s3_data", edge_type=EdgeType.CONTROL, label="Least privilege limits blast radius"),
-            InfraEdge(source="ctrl_patch", target="jndi_rce", edge_type=EdgeType.CONTROL, label="Patching Log4j removes JNDI vulnerability"),
-            InfraEdge(source="ctrl_egress", target="jndi_rce", edge_type=EdgeType.CONTROL, label="Egress filtering blocks JNDI callback"),
+            InfraEdge(source="ctrl_waf_log4j", target="web_app", edge_type=EdgeType.CONTROL, label="WAF pattern matching for JNDI strings", exploit_probability=0.5),
+            InfraEdge(source="ctrl_imds_v2", target="cloud_creds", edge_type=EdgeType.CONTROL, label="IMDSv2 blocks unauthenticated metadata access", exploit_probability=0.5),
+            InfraEdge(source="ctrl_iam_scope", target="s3_data", edge_type=EdgeType.CONTROL, label="Least privilege limits blast radius", exploit_probability=0.5),
+            InfraEdge(source="ctrl_patch", target="jndi_rce", edge_type=EdgeType.CONTROL, label="Patching Log4j removes JNDI vulnerability", exploit_probability=0.5),
+            InfraEdge(source="ctrl_egress", target="jndi_rce", edge_type=EdgeType.CONTROL, label="Egress filtering blocks JNDI callback", exploit_probability=0.5),
         ],
     )
 
@@ -596,24 +580,24 @@ def build_equifax() -> tuple[CausalGraph, list[GoalPredicate], BreachCaseStudy]:
             InfraNode(id="pii_database", type=NodeType.ASSET, name="PII Database", description="148M consumer records (SSN, DOB, addresses)"),
             InfraNode(id="exfil_staging", type=NodeType.ASSET, name="Data Exfiltration", description="Staged and exfiltrated data over 76 days"),
             # Controls
-            InfraNode(id="ctrl_patch_eq", type=NodeType.CONTROL, name="Patch Management", control_state=ControlState.INACTIVE, control_type="vulnerability", annual_cost=80000, description="Apache Struts patch — CVE published March, exploited May, 2 months unpatched"),
-            InfraNode(id="ctrl_ssl_inspect", type=NodeType.CONTROL, name="SSL Inspection", control_state=ControlState.INACTIVE, control_type="monitoring", annual_cost=90000, description="SSL/TLS inspection on egress — certificate expired, inspection disabled 19 months"),
-            InfraNode(id="ctrl_db_encrypt", type=NodeType.CONTROL, name="Database Encryption", control_state=ControlState.INACTIVE, control_type="encryption", annual_cost=50000, description="Encryption at rest — PII stored in plaintext"),
-            InfraNode(id="ctrl_segmentation_eq", type=NodeType.CONTROL, name="Network Segmentation", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=100000, description="Segment public web from internal DBs — flat network"),
-            InfraNode(id="ctrl_ids_eq", type=NodeType.CONTROL, name="IDS/IPS", control_state=ControlState.ACTIVE, control_type="monitoring", annual_cost=150000, description="Intrusion detection — present but SSL cert expired broke inspection"),
+            InfraNode(id="ctrl_patch_eq", type=NodeType.CONTROL, name="Patch Management", control_state=ControlState.INACTIVE, control_type="vulnerability", annual_cost=80000, description="Apache Struts patch — CVE published March, exploited May, 2 months unpatched", effectiveness=0.97, bypass_probability=0.03),
+            InfraNode(id="ctrl_ssl_inspect", type=NodeType.CONTROL, name="SSL Inspection", control_state=ControlState.INACTIVE, control_type="monitoring", annual_cost=90000, description="SSL/TLS inspection on egress — certificate expired, inspection disabled 19 months", effectiveness=0.80, bypass_probability=0.20),
+            InfraNode(id="ctrl_db_encrypt", type=NodeType.CONTROL, name="Database Encryption", control_state=ControlState.INACTIVE, control_type="encryption", annual_cost=50000, description="Encryption at rest — PII stored in plaintext", effectiveness=0.75, bypass_probability=0.25),
+            InfraNode(id="ctrl_segmentation_eq", type=NodeType.CONTROL, name="Network Segmentation", control_state=ControlState.INACTIVE, control_type="segmentation", annual_cost=100000, description="Segment public web from internal DBs — flat network", effectiveness=0.85, bypass_probability=0.15),
+            InfraNode(id="ctrl_ids_eq", type=NodeType.CONTROL, name="IDS/IPS", control_state=ControlState.ACTIVE, control_type="monitoring", annual_cost=150000, description="Intrusion detection — present but SSL cert expired broke inspection", effectiveness=0.25, bypass_probability=0.75),
         ],
         edges=[
-            InfraEdge(source="attacker_eq", target="struts_portal", edge_type=EdgeType.ACCESS, label="Exploit CVE-2017-5638 in Apache Struts"),
-            InfraEdge(source="struts_portal", target="webshell", edge_type=EdgeType.ACCESS, label="Deploy web shell on compromised server"),
-            InfraEdge(source="webshell", target="internal_db_creds", edge_type=EdgeType.ACCESS, label="Harvest plaintext DB credentials from config"),
-            InfraEdge(source="internal_db_creds", target="pii_database", edge_type=EdgeType.ACCESS, label="Connect to databases with harvested credentials"),
-            InfraEdge(source="pii_database", target="exfil_staging", edge_type=EdgeType.ACCESS, label="Stage and exfiltrate 148M records over 76 days"),
+            InfraEdge(source="attacker_eq", target="struts_portal", edge_type=EdgeType.ACCESS, label="Exploit CVE-2017-5638 in Apache Struts", exploit_probability=0.85),
+            InfraEdge(source="struts_portal", target="webshell", edge_type=EdgeType.ACCESS, label="Deploy web shell on compromised server", exploit_probability=0.80),
+            InfraEdge(source="webshell", target="internal_db_creds", edge_type=EdgeType.ACCESS, label="Harvest plaintext DB credentials from config", exploit_probability=0.90),
+            InfraEdge(source="internal_db_creds", target="pii_database", edge_type=EdgeType.ACCESS, label="Connect to databases with harvested credentials", exploit_probability=0.95),
+            InfraEdge(source="pii_database", target="exfil_staging", edge_type=EdgeType.ACCESS, label="Stage and exfiltrate 148M records over 76 days", exploit_probability=0.85),
             # Controls
-            InfraEdge(source="ctrl_patch_eq", target="struts_portal", edge_type=EdgeType.CONTROL, label="Patching Struts blocks initial exploit"),
-            InfraEdge(source="ctrl_ssl_inspect", target="exfil_staging", edge_type=EdgeType.CONTROL, label="SSL inspection detects exfiltration traffic"),
-            InfraEdge(source="ctrl_db_encrypt", target="pii_database", edge_type=EdgeType.CONTROL, label="Encryption renders stolen data useless"),
-            InfraEdge(source="ctrl_segmentation_eq", target="internal_db_creds", edge_type=EdgeType.CONTROL, label="Segmentation blocks web→DB lateral movement"),
-            InfraEdge(source="ctrl_ids_eq", target="webshell", edge_type=EdgeType.CONTROL, label="IDS should detect web shell installation"),
+            InfraEdge(source="ctrl_patch_eq", target="struts_portal", edge_type=EdgeType.CONTROL, label="Patching Struts blocks initial exploit", exploit_probability=0.5),
+            InfraEdge(source="ctrl_ssl_inspect", target="exfil_staging", edge_type=EdgeType.CONTROL, label="SSL inspection detects exfiltration traffic", exploit_probability=0.5),
+            InfraEdge(source="ctrl_db_encrypt", target="pii_database", edge_type=EdgeType.CONTROL, label="Encryption renders stolen data useless", exploit_probability=0.5),
+            InfraEdge(source="ctrl_segmentation_eq", target="internal_db_creds", edge_type=EdgeType.CONTROL, label="Segmentation blocks web→DB lateral movement", exploit_probability=0.5),
+            InfraEdge(source="ctrl_ids_eq", target="webshell", edge_type=EdgeType.CONTROL, label="IDS should detect web shell installation", exploit_probability=0.5),
         ],
     )
 

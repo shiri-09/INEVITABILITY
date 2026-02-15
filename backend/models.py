@@ -97,6 +97,9 @@ class InfraNode(BaseModel):
     control_state: Optional[ControlState] = None
     annual_cost: Optional[float] = None
     control_type: Optional[str] = None
+    effectiveness: float = 0.8  # v2.0: how well this control blocks (0.0–1.0)
+    bypass_probability: float = 0.2  # v2.0: 1 - effectiveness
+    detection_latency_hours: float = 0.0  # v2.0: time to detect via this control
 
     # Identity-specific fields
     privilege_level: Optional[str] = None
@@ -122,6 +125,7 @@ class InfraEdge(BaseModel):
     label: str = ""
     constraint: EdgeConstraint = Field(default_factory=EdgeConstraint)
     weight: float = 1.0
+    exploit_probability: float = 0.5  # v2.0: likelihood of exploit success (0.0–1.0)
 
 
 # ─── Causal Graph ────────────────────────────────────────────────────────────
@@ -209,10 +213,14 @@ class SolverResult(BaseModel):
 class InevitabilityResult(BaseModel):
     goal_id: str
     goal_name: str
-    score: float  # 0.0 to 1.0
+    score: float  # 0.0 to 1.0 (structural)
     is_inevitable: bool  # score > threshold
     witness_path: Optional[list[str]] = None
     solver_result: Optional[SolverResult] = None
+    # v2.0: Probabilistic layer
+    probabilistic_score: Optional[float] = None  # 0.0–1.0 quantitative risk
+    risk_distribution: Optional[dict] = None  # Monte Carlo distribution
+    adversary_profile: Optional[str] = None  # APT, organized_crime, script_kiddie
 
 
 # ─── MCS Results ─────────────────────────────────────────────────────────────
@@ -364,6 +372,11 @@ class AnalysisResult(BaseModel):
     collapse_ranking: list[CollapseMetrics] = Field(default_factory=list)
     scm: Optional[SCM] = None
     computation_time_ms: float = 0.0
+    # v2.0: Probabilistic results
+    probabilistic_results: Optional[dict] = None  # Full probabilistic analysis
+    monte_carlo_results: Optional[list] = None  # Monte Carlo simulation output per goal
+    control_rankings: Optional[list[dict]] = None  # Control ROI rankings
+    adversary_profile_used: Optional[str] = None  # Which adversary profile was used
 
 
 # ─── Breach Case Study ──────────────────────────────────────────────────────

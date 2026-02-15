@@ -14,6 +14,30 @@ let state = {
     collapseTimer: null,
 };
 
+// ── Custom Adversary Dropdown ────────────────────────────────────────────────
+function toggleAdversaryDropdown() {
+    const wrapper = document.getElementById('adversary-select-wrapper');
+    wrapper.classList.toggle('open');
+}
+
+function selectAdversary(el) {
+    const value = el.dataset.value;
+    const name = el.querySelector('.option-name').textContent;
+    document.getElementById('adversary-select').value = value;
+    document.querySelector('.custom-select-value').textContent = name;
+    document.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('adversary-select-wrapper').classList.remove('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('adversary-select-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        wrapper.classList.remove('open');
+    }
+});
+
 // ── View Routing ─────────────────────────────────────────────────────────────
 function showView(viewName) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -65,6 +89,9 @@ async function runDemoScenario(scenarioId) {
             scenario_id: scenarioId,
             algorithm: 'greedy',
             max_mcs_cardinality: 5,
+            adversary_profile: document.getElementById('adversary-select')?.value || 'apt',
+            run_monte_carlo: true,
+            mc_simulations: 10000,
         });
 
         state.analysisId = data.analysis_id;
@@ -88,9 +115,10 @@ async function runDemoScenario(scenarioId) {
 // ── Render Dashboard ─────────────────────────────────────────────────────────
 function renderDashboard(data) {
     document.getElementById('dash-scenario-name').textContent = data.scenario_name || 'Analysis Results';
-    document.getElementById('dash-computation-time').textContent = `Computed in ${data.computation_time_ms}ms`;
+    document.getElementById('dash-computation-time').textContent = `v2.0 Engine — Computed in ${data.computation_time_ms}ms`;
 
-    renderScoreGrid(data.inevitability_results);
+    renderScoreGrid(data.inevitability_results, data.probabilistic_results);
+    renderProbabilisticSummary(data.probabilistic_results);
     renderGraph(data);
     renderTogglePanel(data);
     renderMCSGrid(data.mcs_results);
@@ -99,15 +127,24 @@ function renderDashboard(data) {
     renderExplanations(data.explanations);
     renderCollapseView(data.collapse_frames);
     renderCertification(data.certification);
-    showToast('Analysis complete — all modules loaded', 'success');
+    showToast('Analysis complete — structural + probabilistic engine loaded', 'success');
 }
 
 // ── Score Cards ──────────────────────────────────────────────────────────────
-function renderScoreGrid(results) {
+function renderScoreGrid(results, probResults) {
     const grid = document.getElementById('score-grid');
-    grid.innerHTML = results.map(r => {
+    const goalRisks = probResults?.goal_risks || [];
+    const mcResults = probResults?.monte_carlo || [];
+
+    grid.innerHTML = results.map((r, i) => {
         const status = r.is_inevitable ? 'inevitable' : r.score > 0.4 ? 'at-risk' : 'defended';
         const label = r.is_inevitable ? 'INEVITABLE' : r.score > 0.4 ? 'AT RISK' : 'DEFENDED';
+        const probScore = r.probabilistic_score ?? goalRisks[i]?.probabilistic_score ?? null;
+        const mc = mcResults[i] || null;
+        const probDisplay = probScore !== null ? `${(probScore * 100).toFixed(1)}%` : '—';
+        const mcDisplay = mc ? `${mc.probability_percent}%` : '';
+        const ciDisplay = mc ? `[${(mc.confidence_interval.lower * 100).toFixed(1)}–${(mc.confidence_interval.upper * 100).toFixed(1)}%]` : '';
+
         return `
             <div class="score-card ${status}">
                 <div class="score-card-header">
@@ -115,12 +152,85 @@ function renderScoreGrid(results) {
                     <div class="score-badge ${status}">${label}</div>
                 </div>
                 <div class="score-value ${status}">${(r.score * 100).toFixed(0)}%</div>
+                <div class="score-label" style="font-size:0.7rem;color:var(--text-secondary);margin-top:-4px">Structural Inevitability</div>
                 <div class="score-bar">
                     <div class="score-bar-fill ${status}" style="width: ${r.score * 100}%"></div>
                 </div>
-            </div>
+                ${probScore !== null ? `
+                    <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06)">
+                        <div style="display:flex;justify-content:space-between;align-items:baseline">
+                            <span style="font-size:0.7rem;color:var(--text-secondary)">Probabilistic Risk</span>
+                            <span style="font-size:1.4rem;font-weight:700;color:${probScore > 0.5 ? 'var(--accent-red)' : probScore > 0.2 ? 'var(--accent-yellow)' : 'var(--accent-green)'}">${probDisplay}</span>
+                        </div>
+                        <div class="score-bar" style="margin-top:6px">
+                            <div class="score-bar-fill" style="width:${probScore * 100}%;background:${probScore > 0.5 ? 'var(--accent-red)' : probScore > 0.2 ? 'var(--accent-yellow)' : 'var(--accent-green)'}"></div>
+                        </div>
+                        ${mcDisplay ? `<div style="font-size:0.65rem;color:var(--text-secondary);margin-top:4px">MC: ${mcDisplay} ${ciDisplay} (95% CI, n=${mc.simulations.toLocaleString()})</div>` : ''}
+                    </div>
+                ` : ''}
+             </div>
         `;
     }).join('');
+}
+
+// ── v2.0: Probabilistic Summary Panel ────────────────────────────────────────
+function renderProbabilisticSummary(probResults) {
+    const container = document.getElementById('probabilistic-panel');
+    if (!container || !probResults) return;
+
+    const summary = probResults.summary || {};
+    const profile = probResults.adversary_profile || {};
+    const controlRankings = probResults.control_rankings || [];
+    const nakedAssets = probResults.naked_critical_assets || [];
+
+    let html = `
+        <div class="section-title" style="margin-bottom:16px">
+            <span style="color:var(--accent-purple)">⚡</span> Probabilistic Risk Engine v2.0
+        </div>
+
+        <!-- Adversary Profile -->
+        <div class="panel-card" style="margin-bottom:16px;padding:16px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <div style="font-weight:600;color:var(--accent-purple)">${profile.name || 'APT'}</div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary)">${profile.description || ''}</div>
+                </div>
+                <div style="font-size:0.8rem;color:var(--text-secondary)">Skill ×${profile.skill_multiplier || '1.0'}</div>
+            </div>
+        </div>
+
+        <!-- Risk Summary -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+            <div class="panel-card" style="padding:12px;text-align:center;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15)">
+                <div style="font-size:1.5rem;font-weight:800;color:var(--accent-red)">${(summary.max_risk * 100).toFixed(0)}%</div>
+                <div style="font-size:0.65rem;color:var(--text-secondary)">Max Risk</div>
+            </div>
+            <div class="panel-card" style="padding:12px;text-align:center;border-radius:10px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.15)">
+                <div style="font-size:1.5rem;font-weight:800;color:var(--accent-yellow)">${(summary.avg_risk * 100).toFixed(0)}%</div>
+                <div style="font-size:0.65rem;color:var(--text-secondary)">Avg Risk</div>
+            </div>
+            <div class="panel-card" style="padding:12px;text-align:center;border-radius:10px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15)">
+                <div style="font-size:1.5rem;font-weight:800;color:var(--accent-green)">${summary.critical_controls || 0}</div>
+                <div style="font-size:0.65rem;color:var(--text-secondary)">Critical Controls</div>
+            </div>
+            <div class="panel-card" style="padding:12px;text-align:center;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15)">
+                <div style="font-size:1.5rem;font-weight:800;color:${nakedAssets.length > 0 ? 'var(--accent-red)' : 'var(--accent-green)'}">${nakedAssets.length}</div>
+                <div style="font-size:0.65rem;color:var(--text-secondary)">Naked Assets</div>
+            </div>
+        </div>
+    `;
+
+    // Naked Assets Warning
+    if (nakedAssets.length > 0) {
+        html += `
+            <div style="margin-top:16px;padding:12px 16px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:10px">
+                <div style="font-weight:600;color:var(--accent-red);margin-bottom:6px">⚠ Unprotected Critical Assets</div>
+                ${nakedAssets.map(a => `<div style="font-size:0.8rem;color:var(--text-secondary);padding:2px 0">• ${a.asset_name} (${a.criticality})</div>`).join('')}
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
 }
 
 // ── Causal Graph (Canvas) ────────────────────────────────────────────────────
@@ -143,7 +253,7 @@ function renderGraph(data) {
         // Use case study attack path for layout
         const attackPath = data.case_study.attack_path;
         nodes = attackPath.map((step, i) => ({
-            id: `step_${i}`,
+            id: `step_${i} `,
             x: 100 + (i * (W - 200) / Math.max(attackPath.length - 1, 1)),
             y: H / 2 + Math.sin(i * 0.8) * 80,
             label: step.technique || step.description,
@@ -401,7 +511,7 @@ function renderTogglePanel(data) {
     panel.innerHTML = controls.map(ctrl => {
         const isActive = ctrl.classification !== 'IRRELEVANT';
         return `
-            <div class="toggle-item">
+        <div class="toggle-item">
                 <div class="toggle-info">
                     <div class="toggle-name">${ctrl.control_name}</div>
                     <div class="toggle-type">${ctrl.control_type || 'control'} · $${(ctrl.annual_cost || 0).toLocaleString()}/yr</div>
@@ -459,21 +569,22 @@ function renderMCSGrid(results) {
 
         const best = sets[0];
         return `
-            <div class="mcs-card">
-                <div class="mcs-card-header">
-                    <div class="mcs-goal">${mcs.goal_name || 'Goal'}</div>
-                    <div class="mcs-cardinality">|MCS| = ${best.cardinality}</div>
-                </div>
+        <div class="mcs-card">
+            <div class="mcs-card-header">
+                <div class="mcs-goal">${mcs.goal_name || 'Goal'}</div>
+                <div class="mcs-cardinality">|MCS| = ${best.cardinality}</div>
+            </div>
                 ${best.elements.map(el => `
                     <div class="mcs-element">
                         <span class="mcs-element-icon">✓</span>
                         <span>${el.control_name}</span>
                     </div>
-                `).join('')}
-                <div class="mcs-cost">
-                    Total remediation cost: $${(best.total_cost || 0).toLocaleString()}/yr
-                    ${best.validated ? ' · ✓ Verified' : ''}
-                </div>
+                `).join('')
+            }
+    <div class="mcs-cost">
+        Total remediation cost: $${(best.total_cost || 0).toLocaleString()}/yr
+        ${best.validated ? ' · ✓ Verified' : ''}
+    </div>
             </div>
         `;
     }).join('');
@@ -502,7 +613,7 @@ function renderTheaterGrid(reports) {
             <div></div>
             <div class="theater-reason">${c.reason || ''}</div>
         </div>
-    `).join('');
+        `).join('');
 }
 
 // ── Economic Panel ───────────────────────────────────────────────────────────
@@ -544,11 +655,12 @@ function renderExplanations(explanations) {
     panel.innerHTML = explanations.map(exp => {
         const statusClass = exp.inevitability_score > 0.7 ? 'inevitable' : 'defended';
         return `
-            <div class="explanation-card">
-                <div class="explanation-finding ${statusClass}">${exp.finding || ''}</div>
+        <div class="explanation-card">
+            <div class="explanation-finding ${statusClass}">${exp.finding || ''}</div>
                 ${(exp.causal_chain || []).map(step => `
                     <div class="explanation-step">${step.step_number}. ${step.statement}</div>
-                `).join('')}
+                `).join('')
+            }
                 ${exp.mcs_explanation ? `<div class="explanation-mcs">${exp.mcs_explanation}</div>` : ''}
                 ${(exp.theater_summary || []).map(t => `<div class="explanation-theater">${t}</div>`).join('')}
             </div>
@@ -568,7 +680,7 @@ function renderCollapseView(frames) {
             <div class="timeline-label">${frame.label || `Step ${frame.step}`}</div>
             <div class="timeline-detail">${frame.control_disabled ? `Disable: ${frame.control_disabled}` : 'Baseline'}</div>
         </div>
-    `).join('');
+        `).join('');
 
     showCollapseFrame(0);
 }
@@ -582,15 +694,15 @@ function showCollapseFrame(index) {
 
     // Update frame info
     document.getElementById('collapse-frame-info').innerHTML = `
-        <div class="frame-label">Step ${frame.step} — ${frame.label || ''}</div>
-        <div class="frame-narration">${frame.narration || ''}</div>
+        <div class="frame-label"> Step ${frame.step} — ${frame.label || ''}</div>
+            <div class="frame-narration">${frame.narration || ''}</div>
     `;
 
     // Update score cards
     const scores = document.getElementById('collapse-scores');
     if (frame.goal_states) {
         scores.innerHTML = Object.values(frame.goal_states).map(g => `
-            <div class="collapse-score-card ${g.status}">
+        <div class="collapse-score-card ${g.status}">
                 <div style="font-weight: 700; margin-bottom: 4px;">${g.name}</div>
                 <div style="font-family: var(--font-mono); font-size: 1.8rem; font-weight: 700;">${(g.score * 100).toFixed(0)}%</div>
                 <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">${g.status}</div>
@@ -650,9 +762,9 @@ function resetCollapse() {
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 function formatDollars(n) {
-    if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-    if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`;
-    return `$${n}`;
+    if (n >= 1000000) return `$${(n / 1000000).toFixed(1)} M`;
+    if (n >= 1000) return `$${(n / 1000).toFixed(0)} K`;
+    return `$${n} `;
 }
 
 // ── Toast Notifications ──────────────────────────────────────────────────────
@@ -661,8 +773,8 @@ function showToast(message, type = 'info') {
     if (existing) existing.remove();
 
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `<span class="toast-icon">${type === 'success' ? '✓' : type === 'danger' ? '✕' : 'ℹ'}</span> ${message}`;
+    toast.className = `toast ${type} `;
+    toast.innerHTML = `<span class="toast-icon"> ${type === 'success' ? '✓' : type === 'danger' ? '✕' : 'ℹ'}</span> ${message} `;
     document.body.appendChild(toast);
 
     setTimeout(() => {
@@ -725,11 +837,12 @@ function renderCertification(cert) {
                         margin-bottom: 4px;">${f.severity}: ${f.finding}</div>
                     <div style="color: var(--text-secondary);">${f.recommendation}</div>
                 </div>
-            `).join('') || ''}
+            `).join('') || ''
+        }
 
-            <button class="cert-export-btn" onclick="exportCertification()">📄 Export Certification Report</button>
+    <button class="cert-export-btn" onclick="exportCertification()">📄 Export Certification Report</button>
         </div>
-    `;
+        `;
 }
 
 function exportCertification() {
@@ -754,8 +867,8 @@ function switchCustomTab(mode) {
     document.querySelectorAll('.custom-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.custom-mode').forEach(m => m.classList.remove('active'));
 
-    document.getElementById(`tab-${mode}`).classList.add('active');
-    document.getElementById(`custom-mode-${mode}`).classList.add('active');
+    document.getElementById(`tab - ${mode} `).classList.add('active');
+    document.getElementById(`custom - mode - ${mode} `).classList.add('active');
 }
 
 // ── Visual Builder Helpers ───────────────────────────────────────────────────

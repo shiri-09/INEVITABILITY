@@ -21,7 +21,7 @@
         <div class="nav-brand">
             <span class="nav-logo">◆</span>
             <span class="nav-title">INEVITABILITY</span>
-            <span class="nav-version">v1.0</span>
+            <span class="nav-version">v2.0</span>
         </div>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-view="hero">Home</a>
@@ -78,15 +78,73 @@
                 </div>
 
                 <div class="hero-actions">
-                    <button class="btn btn-primary btn-glow" onclick="runDemoScenario('enterprise_demo')">
-                        <span class="btn-icon">▶</span> Run Live Analysis
-                    </button>
-                    <button class="btn btn-secondary" onclick="runDemoScenario('solarwinds')">
-                        <span class="btn-icon">◆</span> SolarWinds Case Study
-                    </button>
-                    <button class="btn btn-secondary" onclick="runDemoScenario('capital_one')">
-                        <span class="btn-icon">◆</span> Capital One Case Study
-                    </button>
+                    <!-- Primary CTA row -->
+                    <div class="hero-cta-row">
+                        <button class="btn btn-primary btn-glow btn-lg" onclick="runDemoScenario('enterprise_demo')">
+                            <span class="btn-icon">▶</span> Run Live Analysis
+                        </button>
+                        <div class="adversary-selector">
+                            <div class="adversary-selector-label">
+                                <span class="adversary-icon">⚔</span> Adversary Profile
+                            </div>
+                            <div class="custom-select" id="adversary-select-wrapper">
+                                <input type="hidden" id="adversary-select" value="apt">
+                                <div class="custom-select-trigger" onclick="toggleAdversaryDropdown()">
+                                    <span class="custom-select-value">APT (Nation-State)</span>
+                                    <span class="custom-select-arrow">▾</span>
+                                </div>
+                                <div class="custom-select-options" id="adversary-options">
+                                    <div class="custom-select-option selected" data-value="apt"
+                                        onclick="selectAdversary(this)">
+                                        <span class="option-name">APT (Nation-State)</span>
+                                        <span class="option-desc">Elite group — high stealth</span>
+                                    </div>
+                                    <div class="custom-select-option" data-value="organized_crime"
+                                        onclick="selectAdversary(this)">
+                                        <span class="option-name">Organized Crime</span>
+                                        <span class="option-desc">Moderate skill, financial motive</span>
+                                    </div>
+                                    <div class="custom-select-option" data-value="script_kiddie"
+                                        onclick="selectAdversary(this)">
+                                        <span class="option-name">Script Kiddie</span>
+                                        <span class="option-desc">Low sophistication, noisy</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Case Studies grid -->
+                    <div class="hero-cases">
+                        <div class="hero-cases-label">Real-World Breach Case Studies</div>
+                        <div class="hero-cases-grid">
+                            <button class="btn btn-case" onclick="runDemoScenario('solarwinds')">
+                                <span class="case-icon">☀</span>
+                                <span class="case-name">SolarWinds</span>
+                                <span class="case-tag">Supply Chain</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('capital_one')">
+                                <span class="case-icon">🏦</span>
+                                <span class="case-name">Capital One</span>
+                                <span class="case-tag">Cloud SSRF</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('okta')">
+                                <span class="case-icon">🔑</span>
+                                <span class="case-name">Okta</span>
+                                <span class="case-tag">Identity</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('log4shell')">
+                                <span class="case-icon">🪵</span>
+                                <span class="case-name">Log4Shell</span>
+                                <span class="case-tag">RCE / CVE</span>
+                            </button>
+                            <button class="btn btn-case" onclick="runDemoScenario('equifax')">
+                                <span class="case-icon">📊</span>
+                                <span class="case-name">Equifax</span>
+                                <span class="case-tag">Data Breach</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="hero-paradigm">
@@ -114,8 +172,8 @@
             <!-- Loading -->
             <div id="dashboard-loading" class="loading-overlay" style="display:none;">
                 <div class="loading-spinner"></div>
-                <div class="loading-text">Running Causal Analysis Engine...</div>
-                <div class="loading-sub">Computing inevitability scores, extracting MCS, detecting security theater
+                <div class="loading-text">Running Structural + Probabilistic Analysis Engine...</div>
+                <div class="loading-sub">Computing inevitability scores, Monte Carlo simulation, control impact rankings
                 </div>
             </div>
 
@@ -135,6 +193,9 @@
                 <span class="section-icon">◆</span> Inevitability Scores
             </div>
             <div class="score-grid" id="score-grid"></div>
+
+            <!-- v2.0: Probabilistic Risk Engine -->
+            <div id="probabilistic-panel" style="margin-top:24px"></div>
 
             <!-- Causal Graph -->
             <div class="section-title">

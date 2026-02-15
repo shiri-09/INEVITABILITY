@@ -30,6 +30,7 @@ from .advanced_features import (
     MultiGoalOptimizer, CertificationEngine, FailureForecaster,
     GoalCollisionAnalyzer, AdversarialTester,
 )
+from .probability_engine import ProbabilityEngine, ADVERSARY_PROFILES
 
 
 # ─── App Setup ────────────────────────────────────────────────────────────────
@@ -58,6 +59,9 @@ class RunScenarioRequest(BaseModel):
     scenario_id: str
     algorithm: str = "greedy"  # greedy or exact
     max_mcs_cardinality: int = 5
+    adversary_profile: str = "apt"
+    run_monte_carlo: bool = True
+    mc_simulations: int = 10000
 
 
 class CustomAnalysisRequest(BaseModel):
@@ -68,6 +72,9 @@ class CustomAnalysisRequest(BaseModel):
     goals: list[dict]
     algorithm: str = "greedy"
     max_mcs_cardinality: int = 5
+    adversary_profile: str = "apt"
+    run_monte_carlo: bool = True
+    mc_simulations: int = 10000
 
 
 class CounterfactualRequest(BaseModel):
@@ -108,6 +115,9 @@ def _run_analysis_pipeline(
     algorithm: str = "greedy",
     max_mcs_cardinality: int = 5,
     case_study: BreachCaseStudy | None = None,
+    adversary_profile: str = "apt",
+    run_monte_carlo: bool = True,
+    mc_simulations: int = 10000,
 ) -> dict:
     """Run the full analysis pipeline on a graph + goals. Shared by demo and custom endpoints."""
     start = time.perf_counter()
@@ -171,6 +181,16 @@ def _run_analysis_pipeline(
 
     elapsed = (time.perf_counter() - start) * 1000
 
+    # v2.0: Run probabilistic analysis
+    prob_engine = ProbabilityEngine(scm, adversary_profile)
+    prob_results = prob_engine.run_full_analysis(
+        goals, inevitability_results,
+        run_monte_carlo=run_monte_carlo,
+        mc_simulations=mc_simulations,
+    )
+
+    total_elapsed = (time.perf_counter() - start) * 1000
+
     result = AnalysisResult(
         scenario_name=scenario_name,
         inevitability_results=inevitability_results,
@@ -183,7 +203,11 @@ def _run_analysis_pipeline(
         proof_artifacts=proof_artifacts,
         collapse_ranking=collapse_ranking,
         scm=scm,
-        computation_time_ms=round(elapsed, 2),
+        computation_time_ms=round(total_elapsed, 2),
+        probabilistic_results=prob_results,
+        monte_carlo_results=prob_results.get("monte_carlo"),
+        control_rankings=prob_results.get("control_rankings"),
+        adversary_profile_used=adversary_profile,
     )
 
     # Cache session for counterfactual queries
@@ -199,7 +223,9 @@ def _run_analysis_pipeline(
     response = {
         "analysis_id": result.analysis_id,
         "scenario_name": result.scenario_name,
+        "engine_version": "2.0",
         "computation_time_ms": result.computation_time_ms,
+        "adversary_profile": prob_results.get("adversary_profile"),
         "inevitability_results": [r.model_dump() for r in result.inevitability_results],
         "mcs_results": [r.model_dump() for r in result.mcs_results],
         "theater_reports": [r.model_dump() for r in result.theater_reports],
@@ -214,6 +240,7 @@ def _run_analysis_pipeline(
         "forecast": forecast,
         "goal_collisions": goal_collisions,
         "adversarial_report": adversarial_report,
+        "probabilistic_results": prob_results,
         "graph": {
             "nodes": [n.model_dump() for n in graph.nodes],
             "edges": [e.model_dump() for e in graph.edges],
@@ -238,6 +265,9 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
 
     algo = request.algorithm if request else "greedy"
     max_card = request.max_mcs_cardinality if request else 5
+    adv_profile = request.adversary_profile if request else "apt"
+    run_mc = request.run_monte_carlo if request else True
+    mc_sims = request.mc_simulations if request else 10000
 
     return _run_analysis_pipeline(
         graph=graph,
@@ -247,6 +277,9 @@ async def run_scenario(scenario_id: str, request: RunScenarioRequest | None = No
         algorithm=algo,
         max_mcs_cardinality=max_card,
         case_study=case_study,
+        adversary_profile=adv_profile,
+        run_monte_carlo=run_mc,
+        mc_simulations=mc_sims,
     )
 
 
@@ -313,6 +346,9 @@ async def run_custom_analysis(request: CustomAnalysisRequest):
         organization="Custom",
         algorithm=request.algorithm,
         max_mcs_cardinality=request.max_mcs_cardinality,
+        adversary_profile=request.adversary_profile,
+        run_monte_carlo=request.run_monte_carlo,
+        mc_simulations=request.mc_simulations,
     )
 
 
@@ -456,6 +492,24 @@ async def get_forecast(session_id: str):
     result = session["result"]
     forecaster = FailureForecaster(solver, scm)
     return forecaster.forecast(goals, result.inevitability_results)
+
+
+# ─── v2.0: Adversary Profiles ────────────────────────────────────────────────
+
+@app.get("/api/adversary-profiles")
+async def list_adversary_profiles():
+    """List available adversary profiles for risk simulation."""
+    return {
+        "profiles": {
+            key: {
+                "name": profile["name"],
+                "description": profile["description"],
+                "skill_multiplier": profile["skill_multiplier"],
+            }
+            for key, profile in ADVERSARY_PROFILES.items()
+        },
+        "default": "apt",
+    }
 
 
 # ─── Static File Serving ─────────────────────────────────────────────────────
