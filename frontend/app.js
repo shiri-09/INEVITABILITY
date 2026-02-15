@@ -50,6 +50,17 @@ function showView(viewName) {
     if (link) link.classList.add('active');
 
     state.activeView = viewName;
+
+    // Re-layout collapse graph when view becomes visible
+    if (viewName === 'collapse' && state.analysisData?.graph) {
+        setTimeout(() => {
+            layoutCollapseGraph(state.analysisData.graph);
+            if (state.analysisData.collapse_frames) {
+                showCollapseFrame(state.collapseFrame || 0);
+                startCollapseAnimation();
+            }
+        }, 50);
+    }
 }
 
 // Navigation click handlers
@@ -599,10 +610,13 @@ function renderTheaterGrid(reports) {
         report.classifications?.forEach(c => allClassifications.push(c));
     });
 
-    // Sort: irrelevant first (theater!), then by cost
+    // Sort: necessary/critical first, then irrelevant (theater) last
     allClassifications.sort((a, b) => {
-        const order = { 'IRRELEVANT': 0, 'PARTIAL': 1, 'NECESSARY': 2, 'CRITICAL': 3 };
-        return (order[a.classification] || 0) - (order[b.classification] || 0) || (b.annual_cost || 0) - (a.annual_cost || 0);
+        const order = {
+            'necessary': 0, 'critical': 1, 'partial': 2, 'irrelevant': 3,
+            'NECESSARY': 0, 'CRITICAL': 1, 'PARTIAL': 2, 'IRRELEVANT': 3
+        };
+        return (order[a.classification] ?? 4) - (order[b.classification] ?? 4) || (b.annual_cost || 0) - (a.annual_cost || 0);
     });
 
     grid.innerHTML = allClassifications.map(c => `
@@ -669,40 +683,156 @@ function renderExplanations(explanations) {
 }
 
 
-// ── Collapse Simulation ──────────────────────────────────────────────────────
+// ── Collapse Simulation (Canvas Graph) ───────────────────────────────────────
+let collapseGraphState = {
+    nodes: [],
+    edges: [],
+    nodePositions: {},
+    animFrame: null,
+    pulsePhase: 0,
+    transitioning: false,
+    prevNodeStates: null,
+    transitionProgress: 0,
+    targetNodeStates: null,
+};
+
+function layoutCollapseGraph(graphData) {
+    const canvas = document.getElementById('collapse-graph-canvas');
+    if (!canvas) return;
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth * 2;
+    canvas.height = container.clientHeight * 2;
+
+    const nodes = graphData.nodes || [];
+    const edges = graphData.edges || [];
+    collapseGraphState.nodes = nodes;
+    collapseGraphState.edges = edges;
+
+    // Categorize nodes
+    const identities = nodes.filter(n => n.type === 'identity');
+    const assets = nodes.filter(n => n.type === 'asset' || n.type === 'privilege');
+    const controls = nodes.filter(n => n.type === 'control');
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const padX = 160, padY = 100;
+
+    // Layout: identities left column, assets center, controls right
+    const positions = {};
+    const colX = [padX, W * 0.38, W * 0.62, W - padX];
+
+    // Identities — left
+    identities.forEach((n, i) => {
+        const spacing = (H - padY * 2) / Math.max(identities.length - 1, 1);
+        positions[n.id] = { x: colX[0], y: padY + i * spacing };
+    });
+
+    // Assets/Privileges — center columns, staggered
+    assets.forEach((n, i) => {
+        const spacing = (H - padY * 2) / Math.max(assets.length - 1, 1);
+        const colIdx = i % 2 === 0 ? 1 : 2;
+        positions[n.id] = { x: colX[colIdx], y: padY + i * spacing };
+    });
+
+    // Controls — right
+    controls.forEach((n, i) => {
+        const spacing = (H - padY * 2) / Math.max(controls.length - 1, 1);
+        positions[n.id] = { x: colX[3], y: padY + i * spacing };
+    });
+
+    // Position any orphan nodes
+    nodes.forEach((n, i) => {
+        if (!positions[n.id]) {
+            positions[n.id] = { x: W / 2, y: padY + i * 50 };
+        }
+    });
+
+    collapseGraphState.nodePositions = positions;
+}
+
 function renderCollapseView(frames) {
     if (!frames || frames.length === 0) return;
 
+    const graphData = state.analysisData?.graph;
+    if (!graphData) return;
+
+    layoutCollapseGraph(graphData);
+
+    // Build timeline
     const timeline = document.getElementById('collapse-timeline');
     timeline.innerHTML = frames.map((frame, i) => `
         <div class="timeline-step ${i === 0 ? 'active' : ''}" onclick="showCollapseFrame(${i})" data-frame="${i}">
             <div class="timeline-dot"></div>
-            <div class="timeline-label">${frame.label || `Step ${frame.step}`}</div>
-            <div class="timeline-detail">${frame.control_disabled ? `Disable: ${frame.control_disabled}` : 'Baseline'}</div>
+            <div class="timeline-label">${frame.label || 'Step ' + frame.step}</div>
+            <div class="timeline-detail">${frame.control_disabled ? 'Disable: ' + frame.control_disabled : 'Baseline'}</div>
         </div>
-        `).join('');
+    `).join('');
 
     showCollapseFrame(0);
+    startCollapseAnimation();
+}
+
+function startCollapseAnimation() {
+    if (collapseGraphState.animFrame) return;
+    function loop() {
+        collapseGraphState.pulsePhase += 0.03;
+        if (collapseGraphState.transitioning) {
+            collapseGraphState.transitionProgress = Math.min(1, collapseGraphState.transitionProgress + 0.04);
+            if (collapseGraphState.transitionProgress >= 1) {
+                collapseGraphState.transitioning = false;
+                collapseGraphState.prevNodeStates = collapseGraphState.targetNodeStates;
+            }
+        }
+        drawCollapseGraph();
+        collapseGraphState.animFrame = requestAnimationFrame(loop);
+    }
+    loop();
 }
 
 function showCollapseFrame(index) {
     const frames = state.analysisData?.collapse_frames;
     if (!frames || !frames[index]) return;
 
+    const prevFrame = state.collapseFrame;
     state.collapseFrame = index;
     const frame = frames[index];
 
+    // For step 0 (baseline), force all nodes to "defended" state so the graph starts all-green
+    let nodeStates = frame.node_states;
+    if (index === 0 && nodeStates) {
+        const allDefended = {};
+        for (const [id, ns] of Object.entries(nodeStates)) {
+            allDefended[id] = { ...ns, color: '#22c55e', score: 0, status: 'defended', pulse: false };
+        }
+        nodeStates = allDefended;
+    }
+
+    // Animate transition
+    if (collapseGraphState.prevNodeStates && index !== prevFrame) {
+        collapseGraphState.transitioning = true;
+        collapseGraphState.transitionProgress = 0;
+        collapseGraphState.targetNodeStates = nodeStates;
+    } else {
+        collapseGraphState.prevNodeStates = nodeStates;
+        collapseGraphState.targetNodeStates = nodeStates;
+    }
+
     // Update frame info
     document.getElementById('collapse-frame-info').innerHTML = `
-        <div class="frame-label"> Step ${frame.step} — ${frame.label || ''}</div>
-            <div class="frame-narration">${frame.narration || ''}</div>
+        <div class="frame-label">Step ${frame.step} — ${frame.label || ''}</div>
+        <div class="frame-narration">${frame.narration || ''}</div>
     `;
 
     // Update score cards
     const scores = document.getElementById('collapse-scores');
     if (frame.goal_states) {
-        scores.innerHTML = Object.values(frame.goal_states).map(g => `
-        <div class="collapse-score-card ${g.status}">
+        let goalStates = Object.values(frame.goal_states);
+        // Override step 0 to show all goals at 0% / defended
+        if (index === 0) {
+            goalStates = goalStates.map(g => ({ ...g, score: 0, status: 'defended', newly_inevitable: false }));
+        }
+        scores.innerHTML = goalStates.map(g => `
+            <div class="collapse-score-card ${g.status}">
                 <div style="font-weight: 700; margin-bottom: 4px;">${g.name}</div>
                 <div style="font-family: var(--font-mono); font-size: 1.8rem; font-weight: 700;">${(g.score * 100).toFixed(0)}%</div>
                 <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">${g.status}</div>
@@ -721,6 +851,196 @@ function showCollapseFrame(index) {
             s.classList.add('doom');
         }
     });
+}
+
+function drawCollapseGraph() {
+    const canvas = document.getElementById('collapse-graph-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const { nodes, edges, nodePositions, pulsePhase, transitioning, transitionProgress, prevNodeStates, targetNodeStates } = collapseGraphState;
+
+    if (!prevNodeStates || !targetNodeStates) return;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Get interpolated node state
+    function getNodeState(nodeId) {
+        const target = targetNodeStates[nodeId] || {};
+        if (!transitioning || !prevNodeStates[nodeId]) return target;
+        const prev = prevNodeStates[nodeId];
+        const t = transitionProgress;
+        return {
+            ...target,
+            score: prev.score + (target.score - prev.score) * t,
+            color: target.color,
+            pulse: target.pulse,
+            status: t > 0.5 ? target.status : prev.status,
+        };
+    }
+
+    // Draw edges
+    edges.forEach(edge => {
+        const from = nodePositions[edge.source];
+        const to = nodePositions[edge.target];
+        if (!from || !to) return;
+
+        const sourceState = getNodeState(edge.source);
+        const targetState = getNodeState(edge.target);
+
+        // Edge color based on states
+        let edgeColor, edgeAlpha;
+        if (sourceState.status === 'inevitable' || sourceState.status === 'compromised') {
+            edgeColor = '#ef4444';
+            edgeAlpha = 0.6 + Math.sin(pulsePhase * 2) * 0.2;
+        } else if (sourceState.status === 'disabled') {
+            edgeColor = '#4b5563';
+            edgeAlpha = 0.2;
+        } else {
+            edgeColor = '#1e90ff';
+            edgeAlpha = 0.25;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = edgeAlpha;
+        ctx.strokeStyle = edgeColor;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+
+        // Arrow head
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+        const arrowLen = 16;
+        const arrowX = to.x - Math.cos(angle) * 30;
+        const arrowY = to.y - Math.sin(angle) * 30;
+        ctx.fillStyle = edgeColor;
+        ctx.beginPath();
+        ctx.moveTo(arrowX, arrowY);
+        ctx.lineTo(arrowX - arrowLen * Math.cos(angle - 0.4), arrowY - arrowLen * Math.sin(angle - 0.4));
+        ctx.lineTo(arrowX - arrowLen * Math.cos(angle + 0.4), arrowY - arrowLen * Math.sin(angle + 0.4));
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    });
+
+    // Draw nodes
+    nodes.forEach(node => {
+        const pos = nodePositions[node.id];
+        if (!pos) return;
+        const ns = getNodeState(node.id);
+        const radius = node.type === 'control' ? 22 : node.type === 'identity' ? 24 : 26;
+
+        // Glow for inevitable/compromised nodes
+        if (ns.pulse) {
+            const glowSize = 12 + Math.sin(pulsePhase * 2) * 6;
+            const gradient = ctx.createRadialGradient(pos.x, pos.y, radius, pos.x, pos.y, radius + glowSize);
+            gradient.addColorStop(0, 'rgba(239, 68, 68, 0.4)');
+            gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, radius + glowSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Node shape
+        let fillColor, strokeColor;
+        if (ns.status === 'inevitable' || ns.status === 'compromised') {
+            fillColor = 'rgba(239, 68, 68, 0.2)';
+            strokeColor = '#ef4444';
+        } else if (ns.status === 'disabled') {
+            fillColor = 'rgba(75, 85, 99, 0.2)';
+            strokeColor = '#4b5563';
+        } else {
+            fillColor = 'rgba(34, 197, 94, 0.12)';
+            strokeColor = '#22c55e';
+        }
+
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.5;
+
+        if (node.type === 'control') {
+            // Hexagon for controls
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI / 3) * i - Math.PI / 6;
+                const px = pos.x + radius * Math.cos(a);
+                const py = pos.y + radius * Math.sin(a);
+                i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        } else if (node.type === 'identity') {
+            // Diamond for identities
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y - radius);
+            ctx.lineTo(pos.x + radius, pos.y);
+            ctx.lineTo(pos.x, pos.y + radius);
+            ctx.lineTo(pos.x - radius, pos.y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        } else {
+            // Circle for assets
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // Node icon
+        ctx.fillStyle = strokeColor;
+        ctx.font = '600 20px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const icon = node.type === 'control' ? '🛡' : node.type === 'identity' ? '👤' : '●';
+        ctx.fillText(icon, pos.x, pos.y);
+
+        // Label
+        ctx.fillStyle = '#e5e7eb';
+        ctx.font = '500 18px "Inter", sans-serif';
+        ctx.textAlign = 'center';
+        const name = node.name || node.id;
+        const shortName = name.length > 20 ? name.slice(0, 18) + '…' : name;
+        ctx.fillText(shortName, pos.x, pos.y + radius + 18);
+
+        // Status badge
+        if (ns.status === 'inevitable' || ns.status === 'compromised') {
+            ctx.fillStyle = '#ef4444';
+            ctx.font = 'bold 14px "JetBrains Mono", monospace';
+            ctx.fillText(`${(ns.score * 100).toFixed(0)}%`, pos.x, pos.y + radius + 36);
+        } else if (ns.status === 'disabled') {
+            ctx.fillStyle = '#6b7280';
+            ctx.font = 'bold 14px "JetBrains Mono", monospace';
+            ctx.fillText('DISABLED', pos.x, pos.y + radius + 36);
+        }
+    });
+
+    // Legend
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '500 16px "Inter", sans-serif';
+    ctx.textAlign = 'left';
+    const legendY = H - 40;
+    // Defended
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(20, legendY - 6, 12, 12);
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('Defended', 38, legendY + 4);
+    // Inevitable
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(130, legendY - 6, 12, 12);
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('Inevitable', 148, legendY + 4);
+    // Disabled
+    ctx.fillStyle = '#4b5563';
+    ctx.fillRect(250, legendY - 6, 12, 12);
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('Disabled', 268, legendY + 4);
+    // Shapes
+    ctx.fillText('◆ Identity   ● Asset   ⬡ Control', 380, legendY + 4);
 }
 
 function playCollapse() {
@@ -747,7 +1067,7 @@ function playCollapse() {
             return;
         }
         showCollapseFrame(state.collapseFrame);
-    }, 1500);
+    }, 2000);
 }
 
 function resetCollapse() {
