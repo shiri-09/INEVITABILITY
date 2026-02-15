@@ -244,14 +244,35 @@ function renderProbabilisticSummary(probResults) {
     container.innerHTML = html;
 }
 
-// ── Causal Graph (Canvas) ────────────────────────────────────────────────────
+// ── Causal Graph (Interactive Canvas with Pan/Zoom/Drag) ─────────────────────
+let causalGraphState = {
+    nodes: [],
+    edges: [],
+    canvas: null,
+    ctx: null,
+    // Camera transform
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1,
+    // Interaction state
+    isPanning: false,
+    isDraggingNode: false,
+    dragNodeIndex: -1,
+    lastMouseX: 0,
+    lastMouseY: 0,
+    hoveredNode: -1,
+    initialized: false,
+};
+
 function renderGraph(data) {
     const canvas = document.getElementById('causal-graph-canvas');
     const ctx = canvas.getContext('2d');
 
-    // Set canvas size
-    canvas.width = canvas.parentElement.clientWidth;
-    canvas.height = 500;
+    // Set canvas size (use 2x for retina)
+    const containerW = canvas.parentElement.clientWidth;
+    const containerH = 500;
+    canvas.width = containerW;
+    canvas.height = containerH;
 
     const W = canvas.width;
     const H = canvas.height;
@@ -261,10 +282,9 @@ function renderGraph(data) {
     let edges = [];
 
     if (data.case_study && data.case_study.attack_path) {
-        // Use case study attack path for layout
         const attackPath = data.case_study.attack_path;
         nodes = attackPath.map((step, i) => ({
-            id: `step_${i} `,
+            id: `step_${i}`,
             x: 100 + (i * (W - 200) / Math.max(attackPath.length - 1, 1)),
             y: H / 2 + Math.sin(i * 0.8) * 80,
             label: step.technique || step.description,
@@ -272,33 +292,23 @@ function renderGraph(data) {
             color: i === attackPath.length - 1 ? '#ff3355' : i === 0 ? '#00ff88' : '#00f0ff',
             radius: 22,
         }));
-
         for (let i = 0; i < nodes.length - 1; i++) {
             edges.push({ from: i, to: i + 1 });
         }
     } else if (data.graph && data.graph.nodes && data.graph.nodes.length > 0) {
-        // Build graph from API response nodes/edges
         const gNodes = data.graph.nodes;
         const gEdges = data.graph.edges || [];
-
-        // Color by node type
         const typeColors = {
-            identity: '#00ff88',
-            asset: '#00f0ff',
-            control: '#ffcc00',
-            channel: '#aa55ff',
-            privilege: '#ff8844',
+            identity: '#00ff88', asset: '#00f0ff', control: '#ffcc00',
+            channel: '#aa55ff', privilege: '#ff8844',
         };
-
-        // Compute topological layers for left-to-right layout
         const idToIdx = {};
         gNodes.forEach((n, i) => { idToIdx[n.id] = i; });
 
-        // Build adjacency for non-control edges
         const children = gNodes.map(() => []);
         const parentCount = new Array(gNodes.length).fill(0);
         gEdges.forEach(e => {
-            if (e.edge_type === 'control') return; // skip control edges for layout
+            if (e.edge_type === 'control') return;
             const si = idToIdx[e.source], ti = idToIdx[e.target];
             if (si !== undefined && ti !== undefined) {
                 children[si].push(ti);
@@ -306,7 +316,6 @@ function renderGraph(data) {
             }
         });
 
-        // BFS layering
         const layer = new Array(gNodes.length).fill(0);
         const queue = [];
         for (let i = 0; i < gNodes.length; i++) {
@@ -321,7 +330,6 @@ function renderGraph(data) {
             });
         }
 
-        // Group nodes by layer
         const maxLayer = Math.max(...layer, 0);
         const layerGroups = {};
         gNodes.forEach((n, i) => {
@@ -330,65 +338,89 @@ function renderGraph(data) {
             layerGroups[l].push(i);
         });
 
-        // Position nodes in a layered layout
         const marginX = 120, marginY = 80;
         gNodes.forEach((n, i) => {
             const l = layer[i];
             const group = layerGroups[l];
             const posInGroup = group.indexOf(i);
             const groupSize = group.length;
-
             const x = marginX + (l / Math.max(maxLayer, 1)) * (W - 2 * marginX);
             const totalHeight = (groupSize - 1) * 100;
             const y = H / 2 - totalHeight / 2 + posInGroup * 100;
-
             const isCritical = n.criticality === 'critical';
             let color = typeColors[n.type] || '#00f0ff';
             if (n.type === 'asset' && isCritical) color = '#ff3355';
-
             nodes.push({
-                id: n.id,
-                x, y,
-                label: n.name || n.id,
-                color,
+                id: n.id, x, y,
+                label: n.name || n.id, color,
                 radius: isCritical ? 26 : n.type === 'identity' ? 24 : 20,
                 nodeType: n.type,
             });
         });
 
-        // Build edges using node indices
         gEdges.forEach(e => {
             const fromIdx = idToIdx[e.source];
             const toIdx = idToIdx[e.target];
             if (fromIdx !== undefined && toIdx !== undefined) {
                 edges.push({
-                    from: fromIdx,
-                    to: toIdx,
+                    from: fromIdx, to: toIdx,
                     label: e.label || '',
                     isControl: e.edge_type === 'control',
                 });
             }
         });
     } else {
-        // No graph data at all
-        nodes = [{
-            id: 'empty', x: W / 2, y: H / 2, label: 'No graph data', color: '#555', radius: 30,
-        }];
+        nodes = [{ id: 'empty', x: W / 2, y: H / 2, label: 'No graph data', color: '#555', radius: 30 }];
     }
+
+    // Store in state for interactive redraw
+    causalGraphState.nodes = nodes;
+    causalGraphState.edges = edges;
+    causalGraphState.canvas = canvas;
+    causalGraphState.ctx = ctx;
+    causalGraphState.offsetX = 0;
+    causalGraphState.offsetY = 0;
+    causalGraphState.scale = 1;
+    causalGraphState.hoveredNode = -1;
+
+    // Attach event listeners only once
+    if (!causalGraphState.initialized) {
+        causalGraphState.initialized = true;
+        setupGraphInteraction(canvas);
+    }
+
+    drawCausalGraph();
+}
+
+// ── Draw the graph using current camera transform ────────────────────────────
+function drawCausalGraph() {
+    const { nodes, edges, canvas, ctx, offsetX, offsetY, scale, hoveredNode } = causalGraphState;
+    if (!canvas || !ctx) return;
+
+    const W = canvas.width;
+    const H = canvas.height;
 
     // Clear
     ctx.fillStyle = '#0a0a0f';
     ctx.fillRect(0, 0, W, H);
 
-    // Draw grid
+    // Draw grid (fixed, no transform)
     ctx.strokeStyle = 'rgba(0, 240, 255, 0.04)';
     ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 40) {
+    const gridSpacing = 40 * scale;
+    const gridOffX = offsetX % gridSpacing;
+    const gridOffY = offsetY % gridSpacing;
+    for (let x = gridOffX; x < W; x += gridSpacing) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
     }
-    for (let y = 0; y < H; y += 40) {
+    for (let y = gridOffY; y < H; y += gridSpacing) {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
+
+    // Apply camera transform
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
 
     // Draw edges with glow
     edges.forEach(e => {
@@ -400,18 +432,16 @@ function renderGraph(data) {
         const edgeColor = isControl ? 'rgba(255, 204, 0, 0.6)' : 'rgba(0, 240, 255, 0.6)';
         const glowColor = isControl ? 'rgba(255, 204, 0, 0.12)' : 'rgba(0, 240, 255, 0.15)';
 
-        // Glow
         ctx.strokeStyle = glowColor;
-        ctx.lineWidth = 6;
+        ctx.lineWidth = 6 / scale;
         ctx.setLineDash([]);
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
         ctx.lineTo(to.x, to.y);
         ctx.stroke();
 
-        // Main line
         ctx.strokeStyle = edgeColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 / scale;
         ctx.setLineDash(isControl ? [8, 6] : []);
         ctx.beginPath();
         ctx.moveTo(from.x, from.y);
@@ -436,7 +466,7 @@ function renderGraph(data) {
             const midX = (from.x + to.x) / 2;
             const midY = (from.y + to.y) / 2 - 8;
             ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-            ctx.font = '9px Inter, sans-serif';
+            ctx.font = `${9 / scale}px Inter, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText(e.label, midX, midY);
@@ -444,33 +474,34 @@ function renderGraph(data) {
     });
 
     // Draw nodes
-    nodes.forEach(node => {
+    nodes.forEach((node, idx) => {
+        const isHovered = idx === hoveredNode;
+
         // Glow
         const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, node.radius * 2);
-        grad.addColorStop(0, node.color + '40');
+        grad.addColorStop(0, node.color + (isHovered ? '70' : '40'));
         grad.addColorStop(1, 'transparent');
         ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius * 2, 0, Math.PI * 2);
+        ctx.arc(node.x, node.y, node.radius * (isHovered ? 2.5 : 2), 0, Math.PI * 2);
         ctx.fill();
 
         // Node body
-        ctx.fillStyle = '#12121a';
+        ctx.fillStyle = isHovered ? '#1a1a2a' : '#12121a';
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.strokeStyle = node.color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = isHovered ? 3 / scale : 2 / scale;
         ctx.stroke();
 
         // Label
         ctx.fillStyle = '#e8e8ef';
-        ctx.font = '11px Inter, sans-serif';
+        ctx.font = `${11 / scale}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
-        // Word wrap
         const words = node.label.split(' ');
         let line = '';
         let lineY = node.y + node.radius + 8;
@@ -487,12 +518,184 @@ function renderGraph(data) {
         ctx.fillText(line.trim(), node.x, lineY);
     });
 
-    // Title overlay
+    ctx.restore();
+
+    // Title overlay (fixed position, not affected by transform)
     ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
     ctx.font = '12px JetBrains Mono, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('CAUSAL ATTACK GRAPH', 20, 20);
+
+    // Zoom indicator (fixed position)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${Math.round(scale * 100)}%`, W - 20, 20);
+
+    // Interaction hint (fixed position, subtle)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Scroll to zoom · Drag to pan · Drag nodes to move', W - 20, H - 12);
+}
+
+// ── Mouse / Touch interaction for graph ──────────────────────────────────────
+function setupGraphInteraction(canvas) {
+    // Convert screen coordinates to graph coordinates
+    function screenToGraph(sx, sy) {
+        return {
+            x: (sx - causalGraphState.offsetX) / causalGraphState.scale,
+            y: (sy - causalGraphState.offsetY) / causalGraphState.scale,
+        };
+    }
+
+    // Find node under cursor
+    function hitTestNode(gx, gy) {
+        const { nodes } = causalGraphState;
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            const n = nodes[i];
+            const dx = gx - n.x;
+            const dy = gy - n.y;
+            if (dx * dx + dy * dy <= (n.radius + 8) * (n.radius + 8)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function getCanvasPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+        };
+    }
+
+    // Mouse down — start pan or node drag
+    canvas.addEventListener('mousedown', (e) => {
+        const pos = getCanvasPos(e);
+        const gp = screenToGraph(pos.x, pos.y);
+        const hitNode = hitTestNode(gp.x, gp.y);
+
+        causalGraphState.lastMouseX = pos.x;
+        causalGraphState.lastMouseY = pos.y;
+
+        if (hitNode >= 0) {
+            causalGraphState.isDraggingNode = true;
+            causalGraphState.dragNodeIndex = hitNode;
+            canvas.style.cursor = 'grabbing';
+        } else {
+            causalGraphState.isPanning = true;
+            canvas.style.cursor = 'grabbing';
+        }
+    });
+
+    // Mouse move — pan or drag node or hover
+    canvas.addEventListener('mousemove', (e) => {
+        const pos = getCanvasPos(e);
+        const dx = pos.x - causalGraphState.lastMouseX;
+        const dy = pos.y - causalGraphState.lastMouseY;
+
+        if (causalGraphState.isDraggingNode) {
+            const node = causalGraphState.nodes[causalGraphState.dragNodeIndex];
+            if (node) {
+                node.x += dx / causalGraphState.scale;
+                node.y += dy / causalGraphState.scale;
+                drawCausalGraph();
+            }
+        } else if (causalGraphState.isPanning) {
+            causalGraphState.offsetX += dx;
+            causalGraphState.offsetY += dy;
+            drawCausalGraph();
+        } else {
+            // Hover detection
+            const gp = screenToGraph(pos.x, pos.y);
+            const hitNode = hitTestNode(gp.x, gp.y);
+            if (hitNode !== causalGraphState.hoveredNode) {
+                causalGraphState.hoveredNode = hitNode;
+                canvas.style.cursor = hitNode >= 0 ? 'grab' : 'default';
+                drawCausalGraph();
+            }
+        }
+
+        causalGraphState.lastMouseX = pos.x;
+        causalGraphState.lastMouseY = pos.y;
+    });
+
+    // Mouse up — stop pan/drag
+    canvas.addEventListener('mouseup', () => {
+        causalGraphState.isPanning = false;
+        causalGraphState.isDraggingNode = false;
+        causalGraphState.dragNodeIndex = -1;
+        canvas.style.cursor = causalGraphState.hoveredNode >= 0 ? 'grab' : 'default';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        causalGraphState.isPanning = false;
+        causalGraphState.isDraggingNode = false;
+        causalGraphState.dragNodeIndex = -1;
+        if (causalGraphState.hoveredNode !== -1) {
+            causalGraphState.hoveredNode = -1;
+            drawCausalGraph();
+        }
+        canvas.style.cursor = 'default';
+    });
+
+    // Mouse wheel — zoom
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const pos = getCanvasPos(e);
+
+        // Zoom factor
+        const zoomSpeed = 0.1;
+        const delta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
+        const newScale = Math.max(0.2, Math.min(5, causalGraphState.scale + delta));
+
+        // Zoom toward cursor position
+        const scaleChange = newScale / causalGraphState.scale;
+        causalGraphState.offsetX = pos.x - (pos.x - causalGraphState.offsetX) * scaleChange;
+        causalGraphState.offsetY = pos.y - (pos.y - causalGraphState.offsetY) * scaleChange;
+        causalGraphState.scale = newScale;
+
+        drawCausalGraph();
+    }, { passive: false });
+}
+
+// ── Graph zoom controls (called from HTML buttons) ───────────────────────────
+function graphZoomIn() {
+    const canvas = causalGraphState.canvas;
+    if (!canvas) return;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const newScale = Math.min(5, causalGraphState.scale + 0.2);
+    const scaleChange = newScale / causalGraphState.scale;
+    causalGraphState.offsetX = cx - (cx - causalGraphState.offsetX) * scaleChange;
+    causalGraphState.offsetY = cy - (cy - causalGraphState.offsetY) * scaleChange;
+    causalGraphState.scale = newScale;
+    drawCausalGraph();
+}
+
+function graphZoomOut() {
+    const canvas = causalGraphState.canvas;
+    if (!canvas) return;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const newScale = Math.max(0.2, causalGraphState.scale - 0.2);
+    const scaleChange = newScale / causalGraphState.scale;
+    causalGraphState.offsetX = cx - (cx - causalGraphState.offsetX) * scaleChange;
+    causalGraphState.offsetY = cy - (cy - causalGraphState.offsetY) * scaleChange;
+    causalGraphState.scale = newScale;
+    drawCausalGraph();
+}
+
+function graphResetView() {
+    causalGraphState.offsetX = 0;
+    causalGraphState.offsetY = 0;
+    causalGraphState.scale = 1;
+    drawCausalGraph();
 }
 
 // ── Toggle Panel ─────────────────────────────────────────────────────────────

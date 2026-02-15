@@ -953,6 +953,47 @@ body {
     display: block;
 }
 
+/* Graph Zoom Controls */
+.graph-controls {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 2;
+}
+
+.graph-ctrl-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(8px);
+    color: rgba(0, 240, 255, 0.7);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+    line-height: 1;
+}
+
+.graph-ctrl-btn:hover {
+    background: rgba(0, 240, 255, 0.1);
+    border-color: rgba(0, 240, 255, 0.5);
+    color: var(--accent-cyan);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
+}
+
+.graph-ctrl-reset {
+    font-size: 1rem;
+}
+
 /* Toggle Panel */
 .toggle-panel {
     display: grid;

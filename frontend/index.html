@@ -203,6 +203,12 @@
             </div>
             <div class="graph-container">
                 <canvas id="causal-graph-canvas" width="1200" height="600"></canvas>
+                <div class="graph-controls">
+                    <button class="graph-ctrl-btn" onclick="graphZoomIn()" title="Zoom In">+</button>
+                    <button class="graph-ctrl-btn" onclick="graphZoomOut()" title="Zoom Out">−</button>
+                    <button class="graph-ctrl-btn graph-ctrl-reset" onclick="graphResetView()"
+                        title="Reset View">⟲</button>
+                </div>
             </div>
 
             <!-- Assumption Toggle Panel -->
